@@ -1,0 +1,126 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN">
+<html>
+<head>
+<link rel="stylesheet" type="text/css" href="style.css">
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Constant Database (cdb) Internals</title>
+</head>
+
+<body>
+<h2>Constant Database (cdb) Internals</h2>
+<p class=nav> <a href="http://www.unixuser.org/~euske/doc/index.html">back</a>
+
+<p>
+Constant Database, known as cdb, is an elegant data structure proposed by
+<a href="http://cr.yp.to/djb.html">D. J. Bernstein</a>.
+It is suitable for looking up static data which is associated with
+arbitrary byte sequences (usually strings).
+Although DJB already explained this in <a href="http://cr.yp.to/cdb.html">his cdb page</a>,
+it is not easy to implement this because his document lacks some important information
+such as the number of each subtable. Here I tried to illustrate it for those who
+try to develop or extend a cdb implementation.
+
+<hr noshade size="2">
+<h3>Overall Structure</h3>
+<p>
+A cdb has a number of records which has a key and a datum, each of
+which can be in variable length (up to 4GBytes).  The file format
+is designed for locating a record with as few seeks as possible.
+Although a cdb itself seems to have a flat list of key and datum
+pairs, in fact it has 2-level hierarchical tables to lookup.  A
+cdb file consists of roughly three parts.  Actual data which
+consist of an arbitrary number of key/datum pairs are sandwiched
+between two lookup tables.  The first lookup table has always
+fixed size (2,048 bytes). The second lookup table is divided into
+at most 256 subtables, each of which has a variable number of
+entries, and is accessed from the pointer stored in the first
+table. (Fig. 1)
+
+<center> <a href="cdb.png"><img src="cdb.png" border="0"></a><br>
+Fig. 1: Cdb File Structure
+</center>
+
+<h3>Table Lookup</h3>
+<p>
+Each key/value pair is referred to by a small data structure which
+is stored in the second table. Here we call it a "hashpair" for
+convenience.
+<p>
+<ol>
+<li> Given a key, a 32-bit hash value <i>h</i> is calculated from the key by a certain function:<br>
+       
+<li> A hashpair which has the hash value <i>h</i> is located. This step divides into two phases (Fig. 2):
+     <ol type=i>
+      <li> The (<i>h</i> % 256) <font size="-1">[the least 8 significant bits of <i>h</i>]</font>
+       th subtable is located from the first lookup table.
+       <i>i</i>th subtable contains <i>E<sub>i</sub></i> hashpairs.
+           The first lookup table has 256 pairs of the pointer <i>p<sub>i</sub></i> and 
+	   the number of entries <i>E<sub>i</sub></i> for each subtable.
+	   <i>E<sub>i</sub></i> can be zero if the subtable is not existent.
+      <li> The subtable entries are scanned to find the hashpair.
+           The search starts from ((<i>h</i> &gt;&gt; 8) % <i>E<sub>i</sub></i>) th hashpair.
+	   If it reaches the end of the subtables, the search goes back at the beginning of
+	   the table. To facilitate searching, exactly <i>E<sub>i</sub>/2</i> entries
+	   are kept empty (where the pointer is NULL) to detect nonexistent keys.
+	   If it reaches an empty slot, that means there is no corresponding data in this file.
+     </ol>
+<li> The actual key/datum pair is accessed through the pointer in the hashpair.
+<li> If the key is correct, the corresponding datum is retrieved.
+     Otherwise, the next hashpair is tried. This process continues
+     until either all hashpairs in the subtable are tried or
+     an empty hashpair is found.
+</ol>
+<center>
+<a href="table.png"><img src="table.png" border="0"></a><br>
+Fig. 2: Hashpair Lookups
+</center>
+
+<h3>Table Construction</h3>
+(TODO)
+
+<h3>Performance</h3>
+
+<p>
+I measured the lookup time and file size for randomly created records.
+The test program is <a href="http://www.unixuser.org/~euske/doc/cdbinternals/dbmperf.c">dbmperf.c</a>.
+You need gdbm and <a href="http://www.samba.org/">Samba</a> source to build.
+Here is the result. Times are in seconds. File sizes are in bytes.
+
+<h4>Lookup time (Pentium III, 1GHz)</h4>
+<p>
+<table border>
+<tr><th># of records</th> <th>10,000</th> <th>100,000</th> <th>1,000,000</th></tr>
+<tr><td>gdbm</td><td align=right>0.070</td> <td align=right>0.862</td> <td align=right>9.141</td></tr>
+<tr><td>tdb</td> <td align=right>0.035</td> <td align=right>0.358</td> <td align=right>3.904</td></tr>
+<tr><td>cdb</td> <td align=right>0.028</td> <td align=right>0.288</td> <td align=right>3.068</td></tr>
+</table>
+
+<h4>File size</h4>
+<p>
+<table border>
+<tr><th># of records</th> <th>10,000</th> <th>100,000</th> <th>1,000,000</th></tr>
+<tr><td>gdbm</td> <td align=right>1,359,459</td> <td align=right>14,316,032</td> <td align=right>139,738,235</td></tr>
+<tr><td>tdb</td> <td align=right>1,081,344</td> <td align=right>10,764,288</td> <td align=right>107,667,456</td></tr>
+<tr><td>cdb</td> <td align=right>986,108</td> <td align=right>9,798,122</td> <td align=right>98,005,628</td></tr>
+</table>
+
+
+<p>
+&Sigma; <i>E<sub>i</sub></i> = 2 * <i>(the total number of records)</i>
+<p>
+
+
+<h3>Sample Implementation</h3>
+<p>
+Here is <a href="http://www.unixuser.org/~euske/doc/cdbinternals/pycdb.py.html">a sample implementation of cdb in Python</a>.
+The plain text version is <a href="http://www.unixuser.org/~euske/doc/cdbinternals/pycdb.py">here</a>.
+
+
+
+<hr noshade size="2">
+<!-- hhmts start -->
+Last Modified: Mon Oct 13 23:31:28 EDT 2003 (10/14, 12:31 JST)
+<!-- hhmts end -->
+<address>Yusuke Shinyama </address>
+</body>
+</html>

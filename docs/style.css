@@ -1,0 +1,19 @@
+BODY {
+ line-height: 1.5;
+}
+KBD, CODE, BLOCKQUOTE {
+ background: #eeeeee;
+}
+H1 {
+ width: 50%;
+ border-bottom: 4pt solid darkblue;
+}
+H2 {
+ border-bottom: 2pt solid darkblue;
+}
+.nav {
+ font-size: 80%;
+}
+.lastmod {
+ text-align: right;
+}
