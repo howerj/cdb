@@ -102,10 +102,11 @@ static long cdb_seek_cb(void *file, long offset, long whence) {
 	return fseek((FILE*)file, offset, whence);
 }
 
-void *cdb_open_cb(const char *name, const char *mode) {
+void *cdb_open_cb(const char *name, int mode) {
 	assert(name);
-	assert(mode);
-	return fopen(name, mode);
+	assert(mode == CDB_RO_MODE || mode == CDB_RW_MODE);
+	const char *mode_string = mode == CDB_RW_MODE ? "wb+" : "rb";
+	return fopen(name, mode_string);
 }
 
 long cdb_close_cb(void *file) {
@@ -180,6 +181,7 @@ int main(int argc, char **argv) {
 		default: help(stderr, argv[0]); return -1;
 		}
 	}
+	
 
 	return 0;
 }

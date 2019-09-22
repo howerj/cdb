@@ -24,5 +24,8 @@ lib${TARGET}.a: ${TARGET}.o ${TARGET}.h
 
 ${TARGET}: main.o lib${TARGET}.a
 
+test: ${TARGET}
+	./${TARGET} -t
+
 clean:
 	git clean -dfx

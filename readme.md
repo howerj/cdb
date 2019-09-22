@@ -46,9 +46,11 @@ hosted system, examples are provided in [main.c][].
 - [ ] Add options for dumping databases and collecting database statistics.
 - [ ] Experiment with different hashes, file formats, database operators, etcetera.
 - [ ] Generate manual page from the help option?
+- [ ] Integrate with utilities like [littlefs][], or other, embedded file systems.
 
 [main.c]: main.c
 [CDB]: https://cr.yp.to/cdb.html
 [GNU Make]: https://www.gnu.org/software/make/
 [C Compiler]: https://gcc.gnu.org/
 [C99]: https://en.wikipedia.org/wiki/C99
+[littlefs]: https://github.com/ARMmbed/littlefs

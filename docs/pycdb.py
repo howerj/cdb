@@ -3,6 +3,8 @@
 # Python implementation of cdb
 
 # calc hash value with a given key
+
+
 def calc_hash(s):
   return reduce(lambda h,c: (((h << 5) + h) ^ ord(c)) & 0xffffffffL, s, 5381)
 
