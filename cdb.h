@@ -40,7 +40,7 @@ typedef struct {
 typedef struct {
 	size_t length;
 	char *buffer;
-} cdb_buffer_t; /* used to represent a value in memory */
+} cdb_buffer_t; /* used to represent a key or value in memory */
 
 typedef struct {
 	unsigned long position;
