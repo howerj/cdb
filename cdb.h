@@ -13,6 +13,8 @@ extern "C" {
 struct cdb;
 typedef struct cdb cdb_t;
 
+enum { CDB_SEEK_START, CDB_SEEK_CURRENT, CDB_SEEK_END, };
+
 typedef struct {
 	void *(*malloc)(void *arena, size_t length);
 	void *(*realloc)(void *arena, void *pointer, size_t length);
@@ -31,19 +33,24 @@ typedef struct {
 
 typedef struct {
 	size_t length;
-	char buffer[];
+	char *buffer;
 } cdb_buffer_t;
 
-typedef int (*cdb_callback)(cdb_t *cdb, void *param, const cdb_buffer_t *key, cdb_buffer_t *value);
+typedef struct {
+	unsigned long position;
+	unsigned long length;
+} cdb_file_pos_t;
+
+typedef int (*cdb_callback)(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param);
 
 /* All functions return: -1 on failure, 0 on success */
 
-CDB_API int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator);
+CDB_API int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator, int create);
 CDB_API int cdb_close(cdb_t *cdb);
-CDB_API int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_buffer_t **value);
+CDB_API int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value);
 CDB_API int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param);
-
-CDB_API int cdb_make(cdb_t *cdb, cdb_buffer_t *keys, cdb_buffer_t *values, size_t length);
+CDB_API int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value);
+CDB_API int cdb_tests(cdb_file_operators_t *ops, cdb_allocator_t *allocator);
 
 #ifdef __cplusplus
 }
