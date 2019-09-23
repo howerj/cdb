@@ -34,7 +34,6 @@ typedef struct {
 	long (*seek)(void *file, long offset, long whence);
 	void *(*open)(const char *name, int mode);
 	long (*close)(void *file);
-	void *file;
 } cdb_file_operators_t; /* a file abstraction layer, could point to memory, flash, or disk */
 
 typedef struct {
@@ -57,6 +56,8 @@ CDB_API int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value);
 CDB_API int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param);
 CDB_API int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value);
 CDB_API int cdb_tests(cdb_file_operators_t *ops, cdb_allocator_t *allocator); /* returns 0 on success (or NDEBUG defined), -1 on failure */
+
+CDB_API void *cdb_get_file(cdb_t *cdb);
 
 #ifdef __cplusplus
 }

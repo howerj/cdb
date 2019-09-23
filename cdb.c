@@ -18,7 +18,7 @@
 
 #define implies(P, Q) assert(!(P) || (Q))
 #define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
-#define FILE_START (0)
+#define FILE_START (0ul)
 
 typedef struct {
 	uint32_t *hashes;
@@ -31,14 +31,17 @@ struct cdb {
 	cdb_hash_table_t table1[256]; /* TODO: Only allocate if we are creating... */
 	cdb_file_operators_t ops;
 	cdb_allocator_t a;
-	uint32_t position; /* used for creation only */
+	void *file;
+	uint32_t file_start; /* start position of structures in file */
+	uint32_t position;   /* used for creation only */
 	unsigned create :1, opened :1, invalid :1;
 };
 
+/* This is not 'djb2' - the character is xor'ed in and not added. */
 static uint32_t hash(uint8_t *s, size_t length) {
 	uint32_t hash = 5381ul;
 	for (size_t i = 0; i < length; i++)
-		hash = ((hash << 5ul) + hash) + s[i]; /* hash * 33 + c */
+		hash = ((hash << 5ul) + hash) ^ s[i]; /* hash * 33 ^ c */
 	return hash;
 }
 
@@ -62,19 +65,19 @@ static inline void *cdb_reallocate(cdb_t *cdb, void *pointer, const size_t lengt
 
 static inline long cdb_seek(cdb_t *cdb, long position, long whence) {
 	assert(cdb);
-	return cdb->ops.seek(cdb->ops.file, position, whence);
+	return cdb->ops.seek(cdb->file, position, whence);
 }
 
 static inline long cdb_read(cdb_t *cdb, void *buf, size_t length) {
 	assert(cdb);
 	assert(buf);
-	return cdb->ops.read(cdb->ops.file, buf, length);
+	return cdb->ops.read(cdb->file, buf, length);
 }
 
 static inline long cdb_write(cdb_t *cdb, void *buf, size_t length) {
 	assert(cdb);
 	assert(buf);
-	return cdb->ops.write(cdb->ops.file, buf, length);
+	return cdb->ops.write(cdb->file, buf, length);
 }
 
 static long cdb_read_word(cdb_t *cdb, uint32_t *word) {
@@ -118,36 +121,15 @@ static inline long cdb_write_word_pair(cdb_t *cdb, const uint32_t w1, const uint
 	return cdb_write_word(cdb, w2);
 }
 
-int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator, int create, const char *file) {
-	assert(cdb);
-	assert(ops);
-	*cdb = NULL;
-	cdb_t *c = allocator->malloc(allocator->arena, sizeof *c);
-	if (!c)
-		goto fail;
-	memset(c, 0, sizeof *c);
-	c->invalid = 1;
-	c->ops     = *ops;
-	c->a       = *allocator;
-	c->create  = create;
-	*cdb       = c;
-	c->ops.file = c->ops.open(file, create ? CDB_RW_MODE : CDB_RO_MODE);
-	if (!(c->ops.file))
-		goto fail;
-	c->opened = 1;
-
-	if (cdb_seek(c, FILE_START, CDB_SEEK_START) < 0)
-		goto fail;
-	for (size_t i = 0; i < 256; i++) /* write empty header */
-		if (cdb_write_word_pair(c, 0, 0) < 0)
-			goto fail;
-
-	c->position = FILE_START + (256ul * (2ul * sizeof(uint32_t)));
-	c->invalid = 0;
-	return 0;
-fail:
-	(void)cdb_close(c);
-	return -1;
+static int cdb_free_resources(cdb_t *cdb) {
+	if (!cdb)
+		return 0;
+	if (cdb->file)
+		cdb->ops.close(cdb->file);
+	cdb->file = NULL;
+	cdb->opened = 0;
+	cdb->invalid = 1;
+	return cdb_free(cdb, cdb);
 }
 
 int cdb_close(cdb_t *cdb) { /* free cdb, close (and write to disk if in create mode) */
@@ -156,28 +138,62 @@ int cdb_close(cdb_t *cdb) { /* free cdb, close (and write to disk if in create m
 	if (!(cdb->invalid) && cdb->create) {
 		/* TODO: Write to disk... */
 		if (cdb_seek(cdb, cdb->position, CDB_SEEK_START) < 0)
-			return -1;
+			goto fail;
 		for (size_t i = 0; i < 256; i++) {
 			cdb_hash_table_t *t = &cdb->table1[i];
-			const size_t length = t->length;
+			const size_t length = t->length * 2ul;
 			if (length == 0)
 				continue;
+			if (length < t->length)
+				goto fail;
 			for (size_t j = 0; j < length; j++) {
 				t->position = cdb->position;
 				/* TODO: Write out hash table (length should be rounded up to nearest power of 2)...*/
 			}
 		}
 
-		/* - Write hash tables */
+		if (cdb_seek(cdb, cdb->position, CDB_SEEK_START) < 0)
+			goto fail;
 		/* - Seek to file start */
 		/* - Write out */
 	}
-	if (cdb->ops.file)
-		cdb->ops.close(cdb->ops.file);
-	cdb->ops.file = NULL;
-	cdb->opened = 0;
-	cdb->invalid = 1;
-	return cdb_free(cdb, cdb);
+	return cdb_free_resources(cdb);
+fail:
+	(void)cdb_free_resources(cdb);
+	return -1;
+}
+
+int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator, const int create, const char *file) {
+	assert(cdb);
+	assert(ops);
+	*cdb = NULL;
+	cdb_t *c = allocator->malloc(allocator->arena, sizeof *c);
+	if (!c)
+		goto fail;
+	memset(c, 0, sizeof *c);
+	c->invalid    = 1;
+	c->ops        = *ops;
+	c->a          = *allocator;
+	c->create     = create;
+	*cdb          = c;
+	c->file       = c->ops.open(file, create ? CDB_RW_MODE : CDB_RO_MODE);
+	c->file_start = FILE_START;
+	if (!(c->file))
+		goto fail;
+	c->opened = 1;
+
+	if (cdb_seek(c, c->file_start, CDB_SEEK_START) < 0)
+		goto fail;
+	if (create)
+		for (size_t i = 0; i < 256; i++) /* write empty header */
+			if (cdb_write_word_pair(c, 0, 0) < 0)
+				goto fail;
+	c->position = c->file_start + (256ul * (2ul * sizeof(uint32_t)));
+	c->invalid = 0;
+	return 0;
+fail:
+	(void)cdb_close(c);
+	return -1;
 }
 
 /* returns: -1 = error, 0 = not equal, 1 = equal */
@@ -201,6 +217,7 @@ static int cdb_compare(cdb_t *cdb, const cdb_buffer_t *k1, const cdb_file_pos_t 
 	return 1; /* equal */
 }
 
+/* TODO: Add a record number to select from duplicate keys */
 /* returns: -1 = error, 0 = not found, 1 = found */
 int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value) {
 	assert(cdb);
@@ -210,8 +227,8 @@ int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value) {
 		goto fail;
 	*value = (cdb_file_pos_t) { 0, 0 };
 	/* locate key in first table */
-	const uint32_t h = hash((uint8_t *)key->buffer, key->length);
-	if (cdb_seek(cdb, FILE_START + (h % 256) * (2u * sizeof(uint32_t)), CDB_SEEK_START) < 0)
+	const uint32_t h = hash((uint8_t *)(key->buffer), key->length);
+	if (cdb_seek(cdb, cdb->file_start + ((h % 256) * (2u * sizeof(uint32_t))), CDB_SEEK_START) < 0)
 		goto fail;
 	uint32_t pos = 0, num = 0;
 	if (cdb_read_word_pair(cdb, &pos, &num) < 0)
@@ -220,7 +237,7 @@ int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value) {
 		return 0;
 	const uint32_t start = (h >> 8) % num;
 	for (size_t i = 0; i < num; i++) {
-		if (cdb_seek(cdb, pos + ((start + i) % num) * (2u * sizeof(uint32_t)), CDB_SEEK_START) < 0)
+		if (cdb_seek(cdb, pos + (((start + i) % num) * (2u * sizeof(uint32_t))), CDB_SEEK_START) < 0)
 			goto fail;
 		uint32_t h1 = 0, p1 = 0;
 		if (cdb_read_word_pair(cdb, &h1, &p1) < 0)
@@ -255,7 +272,7 @@ int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
 	if (cdb->invalid)
 		goto fail;
 	for (int i = 0; i < 256; i++) {
-		if (cdb_seek(cdb, FILE_START + (i * (2u * sizeof(uint32_t))), CDB_SEEK_START) < 0)
+		if (cdb_seek(cdb, cdb->file_start + (i * (2u * sizeof(uint32_t))), CDB_SEEK_START) < 0)
 			goto fail;
 		uint32_t pos = 0, num = 0;
 		if (cdb_read_word_pair(cdb, &pos, &num) < 0)
@@ -273,8 +290,8 @@ int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
 			uint32_t klen = 0, vlen = 0;
 			if (cdb_read_word_pair(cdb, &klen, &vlen) < 0)
 				goto fail;
-			const cdb_file_pos_t key   = { .length = klen, .position = (2u * sizeof(uint32_t)), };
-		       	const cdb_file_pos_t value = { .length = vlen, .position = (2u * sizeof(uint32_t)) + klen, };
+			const cdb_file_pos_t key   = { .length = klen, .position = p1 + (2u * sizeof(uint32_t)), };
+		       	const cdb_file_pos_t value = { .length = vlen, .position = p1 + (2u * sizeof(uint32_t)) + klen, };
 			if (cb(cdb, &key, &value, param) < 0)
 				goto fail;
 		}
@@ -319,7 +336,6 @@ int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 	assert(value);
 	if (cdb->invalid || cdb->create == 0)
 		goto fail;
-	/* TODO: (Optionally?) Look for duplicate keys (or do it after database completion) */
 	const uint32_t h = hash((uint8_t*)(key->buffer), key->length);
 	if (cdb_seek(cdb, cdb->position, CDB_SEEK_START) < 0)
 		goto fail;
@@ -347,5 +363,10 @@ int cdb_tests(cdb_file_operators_t *ops, cdb_allocator_t *allocator) {
 	if (!DEBUGGING)
 		return 0;
 	return 0;
+}
+
+void *cdb_get_file(cdb_t *cdb) {
+	assert(cdb);
+	return cdb->file;
 }
 
