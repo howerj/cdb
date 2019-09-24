@@ -34,6 +34,7 @@ typedef struct {
 	long (*seek)(void *file, long offset, long whence);
 	void *(*open)(const char *name, int mode);
 	long (*close)(void *file);
+	long (*flush)(void *file); /* called at end of successful creation */
 } cdb_file_operators_t; /* a file abstraction layer, could point to memory, flash, or disk */
 
 typedef struct {
@@ -53,6 +54,7 @@ typedef int (*cdb_callback)(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_fil
 CDB_API int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator, int create, const char *file);
 CDB_API int cdb_close(cdb_t *cdb);  /* free cdb, close (and write to disk if in create mode) */
 CDB_API int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value); /* returns: -1 on error, 0 on not found, 1 on found */
+CDB_API int cdb_get_record(cdb_t *cdb, const cdb_buffer_t *key, int record, cdb_file_pos_t *value); /* returns: -1 on error, 0 on not found, 1 on found */
 CDB_API int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param);
 CDB_API int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value);
 CDB_API int cdb_tests(cdb_file_operators_t *ops, cdb_allocator_t *allocator); /* returns 0 on success (or NDEBUG defined), -1 on failure */
