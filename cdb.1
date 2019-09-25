@@ -1,28 +1,63 @@
 .\" Manpage for cdb
 .\" Contact howe.r.j.89@gmail.com to correct errors or typos.
-.TH cdb 1 "22 Sep 2019" "0.0.1" "cdb man page"
+.TH cdb 1 "25 Sep 2019" "1.0.0" "cdb man page"
 .SH NAME
 cdb \- An interface to the Constant Database library
 .SH SYNOPSIS
-cdb -[htcdks] file.cdb
+cdb -[ht]
+
+cdb -[cdks] file.cdb
+
+cdb -q file.cdb key [record#]
 .SH DESCRIPTION
 .B cdb
 is an interface to the CDB library, or the Constant Database library, a small
-library for creating read only databases (or database that once they are
-created are not modified).
+library for creating read only databases (databases that once they are created
+are not modified). It is a reimplementation of the original CDB program from
+DJB, available from <https://cr.yp.to/cdb.html>. 
+
+The program aims to be compatible with the original file format, but not 
+with the original command line interface.
 
 For comprehensive documentation on this program, the C library API and the file
 format please visit the project home page at
 .B <https://github.com/howerj/cdb>.
-To avoid duplication the program will not be described here.
+To avoid duplication the only the basics will be described here.
 
-.SH EXAMPLES
+.SH OPTIONS
 
+.nf
+\&	-h	print out this help message and exit successfully
+\&	-t	run internal tests, exit with zero on a pass
+\&	-c	run in create mode
+\&	-d	dump the database
+\&	-k	dump the keys in the database
+\&	-s	print statistics about the database
+\&	-q k #?	query the database for a key, with an optional record
+.fi
 
+In create mode values can be input with the following syntax:
+
+.nf
+\&	+key-length,value-length:key->value
+.fi
+
+In query mode a prompt allows keys to be searched for in the following format:
+
+.nf
+\&	+key-length:key
+.fi
+
+Key and value lengths are specified as decimal numbers, the key and length
+values can be binary values (including ASCII NUL).
+
+Only NUL terminated strings may be used as keys with the 'q' option.
 
 .SH EXIT STATUS
 
-This program returns zero on success and non zero on failure.
+This program returns zero on success and non zero on failure. 1 indicates a
+critical failure, 2 indicates a key not found. Errors are printed to 
+stderr(3).
 
 .SH BUGS
 For any bugs, contact the author.
@@ -31,7 +66,7 @@ For any bugs, contact the author.
 Richard James Howe (howe.r.j.89@gmail.com)
 
 .SH COPYRIGHT
-Unlicense, do what you want. See
+Unlicense, do what you thou wilt. See
 .B <https://github.com/howerj/cdb/blob/master/LICENSE>
 For more information.
 

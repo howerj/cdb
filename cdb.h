@@ -1,4 +1,4 @@
-/* CDB - Constant Database C API
+/* Program: Constant Database C API
  * Author:  Richard James Howe
  * Email:   howe.r.j.89@gmail.com
  * License: Unlicense
@@ -50,7 +50,6 @@ typedef struct {
 typedef int (*cdb_callback)(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param);
 
 /* All functions return: -1 on failure, 0 on success */
-
 CDB_API int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator, int create, const char *file);
 CDB_API int cdb_close(cdb_t *cdb);  /* free cdb, close (and write to disk if in create mode) */
 CDB_API int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value); /* returns: -1 on error, 0 on not found, 1 on found */

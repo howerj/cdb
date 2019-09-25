@@ -1,4 +1,4 @@
-/* CDB - Constant Database Driver
+/* Program: Constant Database Driver
  * Author:  Richard James Howe
  * Email:   howe.r.j.89@gmail.com
  * License: Unlicense
@@ -22,7 +22,7 @@
 #include <windows.h>
 #include <io.h>
 #include <fcntl.h>
-static void binary(FILE *f) { _setmode(_fileno(f), _O_BINARY); }
+static void binary(FILE *f) { _setmode(_fileno(f), _O_BINARY); } /* only platform specific code... */
 #else
 static inline void binary(FILE *f) { UNUSED(f); }
 #endif
@@ -77,8 +77,8 @@ static int cdb_getopt(cdb_getopt_t *opt, const int argc, char *const argv[], con
 			return -1;
 		if (!*opt->place)
 			opt->index++;
-		/*if (opt->error && *fmt != ':')
-			(void)fprintf(stderr, "illegal option -- %c\n", opt->option);*/
+		if (opt->error && *fmt != ':')
+			(void)fprintf(stderr, "illegal option -- %c\n", opt->option);
 		return BADCH_E;
 	}
 
@@ -93,8 +93,8 @@ static int cdb_getopt(cdb_getopt_t *opt, const int argc, char *const argv[], con
 			opt->place = "";
 			if (*fmt == ':')
 				return BADARG_E;
-			/*if (opt->error)
-				(void)fprintf(stderr, "option requires an argument -- %c\n", opt->option);*/
+			if (opt->error)
+				(void)fprintf(stderr, "option requires an argument -- %c\n", opt->option);
 			return BADCH_E;
 		} else	{ /* white space */
 			opt->arg = argv[opt->index];
@@ -224,15 +224,6 @@ static int cdb_dump_keys(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_p
 	return fputc('\n', output);
 }
 
-static int cdb_prompt(FILE *output) {
-	assert(output);
-	if (fputs("> ", output) < 0)
-		return -1;
-	if (fflush(output) < 0)
-		return -1;
-	return 0;
-}
-
 static int cdb_create(cdb_t *cdb, FILE *input) {
 	assert(cdb);
 	assert(input);
@@ -297,40 +288,97 @@ end:
 	return r;
 }
 
-static int cdb_query(cdb_t *cdb, FILE *db, FILE *input, FILE *output) {
+static int cdb_prompt(FILE *output) {
+	assert(output);
+	if (fputs("> ", output) < 0)
+		return -1;
+	if (fflush(output) < 0)
+		return -1;
+	return 0;
+}
+
+static int cdb_query_prompt(cdb_t *cdb, FILE *db, FILE *input, FILE *output) {
 	assert(cdb);
 	assert(input);
 	assert(db);
 	assert(output);
-	for (;;) { /* TODO: Get working for arbitrary input queries, and for multiple record retrieval*/
-		char key[256] = { 0 }, value[256] = { 0 };
+	int r = 0;
+	size_t kmlen = IO_BUFFER_SIZE;
+	char *key = malloc(kmlen);
+	if (!key)
+		goto fail;
+	for (;;) {
 		if (cdb_prompt(output) < 0)
 			return -1;
-		if (fscanf(input, "%256s", key) != 1)
-			break;
+		unsigned long klen = 0;
+		if (fscanf(input, "+%lu:", &klen) != 1) {
+			if (feof(input))
+				goto end;
+			int ch = fgetc(input);
+			if (ch != '\n' && fputs("?\n", output) < 0)
+				goto fail;
+			while (ch != '\n' && ch != EOF)
+				ch = fgetc(input);
+			continue;
+		}
+		if (kmlen < klen) {
+			char *t = realloc(key, klen);
+			if (!t)
+				goto fail;
+			key = t;
+		}
+
+		if (klen != fread(key, 1, klen, input))
+			goto fail;
+
+		const int ch = fgetc(input);
+		if (ch != '\n' && ch != EOF)
+			if (ungetc(ch, input) < 0)
+				goto fail;
 		
 		const cdb_buffer_t kb = { .length = strlen(key), .buffer = key };
 		cdb_file_pos_t vp = { 0, 0 };
 		const int r = cdb_get(cdb, &kb, &vp);
 		if (r < 0) {
-			return -1;
+			goto fail;
 		} else if (r == 0) {
 			if (fputs("?\n", output) < 0)
-				return -1;
+				goto fail;
 		} else {
-			if (cdb_read_cb(db, value, MIN(vp.length, sizeof value)) < 0)
-				return -1;
 			if (fprintf(output, "+%lu,%lu:%s,", strlen(key), vp.length, key) < 0)
-				return -1;
+				goto fail;
 			if (fputs("->", output) < 0)
-				return -1;
+				goto fail;
 			if (cdb_print(cdb, &vp, cdb_get_file(cdb), output) < 0)
-				return -1;
+				goto fail;
 			if (fputc('\n', output) < 0)
-				return -1;
+				goto fail;
 		}
 	}
-	return 0;
+fail:
+	r = -1;
+end:
+	free(key);
+	return r;
+}
+
+static int cdb_query(cdb_t *cdb, char *key, int record, FILE *output) {
+	assert(cdb);
+	assert(key);
+	assert(output);
+	int r = 0;
+	const cdb_buffer_t kb = { .length = strlen(key), .buffer = key };
+	cdb_file_pos_t vp = { 0, 0 };
+	const int gr = cdb_get_record(cdb, &kb, record, &vp);
+	if (gr < 0) {
+		r = -1;
+	} else {
+		if (gr > 0)
+			r = cdb_print(cdb, &vp, cdb_get_file(cdb), output);
+		else
+			r = 2; /* not found */
+	}
+	return r;
 }
 
 static int cdb_stats(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param) {
@@ -390,34 +438,19 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output) {
 static int help(FILE *output, const char *arg0) {
 	assert(output);
 	assert(arg0);
-	static const char *fmt = "\
-usage: %s -[htcdks] file.cdb\n\
-CDB - Constant Database Test Driver\n\n\
+	static const char *usage = "\
+Usage:   %s -[ht] *OR* -[cdks] file.cdb *OR* -q file.cdb key [record#]\n\n\
+Program: Constant Database Driver\n\
 Author:  Richard James Howe\n\
 Email:   howe.r.j.89@gmail.com\n\
 Repo:    https://github.com/howerj/cdb\n\
 License: The Unlicense\n\n\
-This is a reimplementation of the CDB program from DJB, which is described\n\
-here at <https://cr.yp.to/cdb.html>. The program is built around a portable\n\
-library and provides an interface for manipulating CDB files. The program\n\
-aims to be compatible with the original file format, but not with the original\n\
-command line interface.\n\n\
-Options:\n\n\
-\t-h\tprint out this help message and exit successfully.\n\
-\t-t\trun internal tests, exit with zero on a pass\n\
-\t-c\trun in create mode\n\
-\t-d\tdump the database\n\
-\t-k\tdump the keys in the database\n\
-\t-s\tprint statistics about the database\n\
-\n\
-This program returns zero on success and non zero on failure, errors are\n\
-printed out to stderr.\n\n\
-";
-	return fprintf(output, fmt, arg0);
+See manual pages or project website for more information.\n\n";
+	return fprintf(output, usage, arg0);
 }
 
 int main(int argc, char **argv) {
-	enum { READ, DUMP, CREATE, STATS, KEYS };
+	enum { READ, QUERY, DUMP, CREATE, STATS, KEYS };
 	const char *file = NULL;
 	int mode = READ;
 
@@ -443,8 +476,7 @@ int main(int argc, char **argv) {
 
 	cdb_getopt_t opt = { .init = 0 };
 	int ch = 0;
-	/* TODO: Allow a single key, with a skip to be queried */
-	while ((ch = cdb_getopt(&opt, argc, argv, "htcdks")) != -1) {
+	while ((ch = cdb_getopt(&opt, argc, argv, "htcdksq")) != -1) {
 		switch (ch) {
 		case 'h': help(stdout, argv[0]); return 0;
 		case 't': return cdb_tests(&ops, &allocator);
@@ -452,6 +484,7 @@ int main(int argc, char **argv) {
 		case 'd': mode = DUMP; break;
 		case 'k': mode = KEYS; break;
 		case 's': mode = STATS; break;
+		case 'q': mode = QUERY; break;
 		default: help(stderr, argv[0]); return -1;
 		}
 	}
@@ -468,10 +501,17 @@ int main(int argc, char **argv) {
 	int r = 0;
 	switch (mode) {
 	case CREATE: r = cdb_create(cdb, stdin); break;
-	case READ:   r = cdb_query(cdb, cdb_get_file(cdb), stdin, stdout); break;
-	case DUMP:   r = cdb_foreach(cdb, cdb_dump, stdout ); break;
+	case READ:   r = cdb_query_prompt(cdb, cdb_get_file(cdb), stdin, stdout); break;
+	case DUMP:   r = cdb_foreach(cdb, cdb_dump, stdout); break;
 	case KEYS:   r = cdb_foreach(cdb, cdb_dump_keys, stdout ); break;
 	case STATS:  r = cdb_stats_print(cdb, stdout); break;
+	case QUERY: {
+		if (opt.index >= argc)
+			die("-q opt requires key (and optional record number)");
+		char *key = argv[opt.index++];
+		r = cdb_query(cdb, key, opt.index < argc ? atoi(argv[opt.index++]) : 0, stdout);
+		break;
+	}
 	default:
 		die("unimplemented mode: %d", mode);
 	}
@@ -481,4 +521,3 @@ int main(int argc, char **argv) {
 
 	return r;
 }
-

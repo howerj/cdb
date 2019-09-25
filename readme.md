@@ -1,7 +1,5 @@
 # CDB Clone - Constant Database
 
-**CURRENT PROJECT STATUS: UNTESTED WORK IN PROGRESS**
-
 - Author: Richard James Howe
 - License: Unlicense
 - Repository: <https://github.com/howerj/cdb>
@@ -30,9 +28,10 @@ you can build the program and then run the command './cdb -h'.
 There are a few goals that the API has:
 
 * It is simple, there should be few functions and data structures.
-* The user should decide when, where and how allocations are performed.
 * The API is fairly easy to use.
 * There should be minimal dependencies on the C standard library.
+* The user should decide when, where and how allocations are performed. The
+  working set should be small.
 
 Some of these goals are in conflict, being able to control allocations and
 having minimal dependencies allow the library to be used in an embedded system,
@@ -122,13 +121,18 @@ script itself is available at the bottom of that page
   - [x] Implement key retrieval
   - [x] Implement multiple key retrieval
   - [x] Implement database write
-- [ ] Make Unit tests, add assertions, make the system robust.
+- [ ] Improve code quality
+  - [x] Make built in self test
+  - [ ] Add a test script
+  - [ ] Add assertions wherever possible
 - [x] Turn into library
   - [ ] Settle on an API.
 - [x] Allow allocation and file system operations to be user specified.
 - [ ] Allow compile time customization of library; 32 or 64 bit, maybe even 16-bit. Endianess also.
 - [x] Document format and command line options.
-  - [ ] Mimic command line options for original program
+  - [ ] Add ASCII diagrams to describe format
+  - [ ] Improve prose of format description
+- [ ] Mimic command line options for original program?
 - [x] Add options for dumping databases and collecting database statistics.
 - [ ] Benchmark the system.
   - [ ] Adding timing information to operations.
@@ -141,6 +145,11 @@ script itself is available at the bottom of that page
 The wish list contains a list of ideas that may be cool to implemented, but
 probably will not be, or can be implemented on top of the program anyway.
 
+- One way of improving performance would be to keep the first, initial, hash
+  table in memory. This is 2KiB, however this conflicts with a goal of minimal
+  memory usage. In fact all of the indexes could be stored in memory, speeding
+  up the search. One, or both, levels could be enabled by a compile time
+  option.
 - Adding a header along with a [CRC][] for error detection, lessons learned
   from other file formats can be incorporated, some guides are available at:
   - <https://softwareengineering.stackexchange.com/questions/171201>
@@ -160,6 +169,8 @@ probably will not be, or can be implemented on top of the program anyway.
 - A few functions could be added to allow the database to be updated after it
   has been created, obviously this would be fraught with danger, but it is
   possible to extend the database after creation despite the name.
+- Instead of having two separate structures for the allocator and the file
+  operations, the structure could be merged.
 
 [main.c]: main.c
 [CDB]: https://cr.yp.to/cdb.html
