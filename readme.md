@@ -233,6 +233,7 @@ running on, a failing example test case, etcetera).
   - [ ] Validate data read off disk; lowest 8 bits of stored hash match bucket,
     pointers are within the right section, and refuse to read/seek if invalid. 
   - [ ] Use less memory when holding index in memory
+- [ ] Improve error reporting
 - [x] Turn into library
   - [ ] Settle on an API
   - [ ] add cdb\_read, cdb\_seek, ...
@@ -240,12 +241,11 @@ running on, a failing example test case, etcetera).
   - [ ] 16/32/64 bit version of the database
   - [ ] configurable endianess
 - [x] Document format and command line options.
-  - [ ] Add ASCII diagrams to describe format
+  - [x] Add ASCII diagrams to describe format
   - [ ] Improve prose of format description
-  - [ ] Generate manual page from this 'readme.md' by either using
+  - [x] Generate manual page from this 'readme.md' by either using
   [ronn][] or [pandoc][]
   - [ ] Remove this list once it is complete
-- [ ] Mimic command line options for original program?
 - [ ] Benchmark the system.
   - [ ] Adding timing information to operations.
   - [ ] Possible improvements include larger I/O buffering and avoiding

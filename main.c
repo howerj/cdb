@@ -238,8 +238,10 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 	for (;;) {
 		unsigned long klen = 0, vlen = 0;
 		char sep[2] = { 0 };
-		if (fscanf(input, "+%lu,%lu:", &klen, &vlen) != 2)
+		if (fscanf(input, "+%lu,%lu", &klen, &vlen) != 2)
 			goto end;
+		if (fgetc(input) != ':')
+			goto fail;
 		if (kmlen < klen) {
 			char *t = realloc(key, klen);
 			if (!t)

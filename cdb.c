@@ -357,6 +357,7 @@ static int cdb_compare(cdb_t *cdb, const cdb_buffer_t *k1, const cdb_file_pos_t 
 /* returns: -1 = error, 0 = not found, 1 = found */
 int cdb_get_record(cdb_t *cdb, const cdb_buffer_t *key, int record, cdb_file_pos_t *value) {
 	assert(cdb);
+	assert(cdb->opened);
 	assert(key);
 	assert(value);
 	if (cdb->invalid)
@@ -429,6 +430,7 @@ fail:
 
 int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value) {
 	assert(cdb);
+	assert(cdb->opened);
 	assert(key);
 	assert(value);
 	return cdb_get_record(cdb, key, 0, value);
@@ -436,6 +438,7 @@ int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value) {
 
 int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
 	assert(cdb);
+	assert(cdb->opened);
 	assert(cb);
 	if (cdb->invalid)
 		goto fail;
@@ -495,6 +498,7 @@ static int cdb_hash_grow(cdb_t *cdb, word_t hash, word_t position) {
 
 int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 	assert(cdb);
+	assert(cdb->opened);
 	assert(key);
 	assert(value);
 	if (cdb->invalid || cdb->create == 0)
