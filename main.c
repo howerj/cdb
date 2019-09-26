@@ -44,7 +44,9 @@ typedef struct {
 	int  init;   /* internal use: initialized or not */
 } cdb_getopt_t;   /* getopt clone; with a few modifications */
 
-/* Adapted from: <https://stackoverflow.com/questions/10404448> */
+/* Adapted from: <https://stackoverflow.com/questions/10404448>
+ * TODO: Change initialization, setting index = 0 should perform an initialization,
+ * other special character options should as 'optional' or 'numeric' would be helpful. */
 static int cdb_getopt(cdb_getopt_t *opt, const int argc, char *const argv[], const char *fmt) {
 	assert(opt);
 	assert(fmt);
@@ -307,7 +309,7 @@ static int cdb_query_prompt(cdb_t *cdb, FILE *db, FILE *input, FILE *output) {
 	char *key = malloc(kmlen);
 	if (!key)
 		goto fail;
-	for (;;) {
+	for (;;) { /* TODO: Allow stats dump, check for ':', allow record to be retrieved */
 		if (cdb_prompt(output) < 0)
 			return -1;
 		unsigned long klen = 0;
@@ -336,7 +338,7 @@ static int cdb_query_prompt(cdb_t *cdb, FILE *db, FILE *input, FILE *output) {
 			if (ungetc(ch, input) < 0)
 				goto fail;
 		
-		const cdb_buffer_t kb = { .length = strlen(key), .buffer = key };
+		const cdb_buffer_t kb = { .length = klen, .buffer = key };
 		cdb_file_pos_t vp = { 0, 0 };
 		const int r = cdb_get(cdb, &kb, &vp);
 		if (r < 0) {
@@ -345,7 +347,7 @@ static int cdb_query_prompt(cdb_t *cdb, FILE *db, FILE *input, FILE *output) {
 			if (fputs("?\n", output) < 0)
 				goto fail;
 		} else {
-			if (fprintf(output, "+%lu,%lu:%s,", strlen(key), vp.length, key) < 0)
+			if (fprintf(output, "+%lu,%lu:%s,", klen, vp.length, key) < 0)
 				goto fail;
 			if (fputs("->", output) < 0)
 				goto fail;
@@ -439,7 +441,7 @@ static int help(FILE *output, const char *arg0) {
 	assert(output);
 	assert(arg0);
 	static const char *usage = "\
-Usage:   %s -[ht] *OR* -[cdks] file.cdb *OR* -q file.cdb key [record#]\n\n\
+Usage:   %s -h *OR* -[cdkst] file.cdb *OR* -q file.cdb key [record#]\n\n\
 Program: Constant Database Driver\n\
 Author:  Richard James Howe\n\
 Email:   howe.r.j.89@gmail.com\n\
@@ -476,10 +478,10 @@ int main(int argc, char **argv) {
 
 	cdb_getopt_t opt = { .init = 0 };
 	int ch = 0;
-	while ((ch = cdb_getopt(&opt, argc, argv, "htcdksq")) != -1) {
+	while ((ch = cdb_getopt(&opt, argc, argv, "ht:cdksq")) != -1) {
 		switch (ch) {
 		case 'h': help(stdout, argv[0]); return 0;
-		case 't': return cdb_tests(&ops, &allocator);
+		case 't': return cdb_tests(&ops, &allocator, opt.arg);
 		case 'c': mode = CREATE; break;
 		case 'd': mode = DUMP; break;
 		case 'k': mode = KEYS; break;

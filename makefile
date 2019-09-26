@@ -10,6 +10,9 @@ TARGET=cdb
 AR      = ar
 ARFLAGS = rcs
 RANLIB  = ranlib
+DESTDIR = install
+
+.PHONY: all test clean dist install
 
 all: ${TARGET}
 
@@ -21,11 +24,23 @@ lib${TARGET}.a: ${TARGET}.o ${TARGET}.h
 	${AR} ${ARFLAGS} $@ $<
 	${RANLIB} $@
 
-
 ${TARGET}: main.o lib${TARGET}.a
 
 test: ${TARGET}
-	./${TARGET} -t
+	./${TARGET} -t t1.cdb
+
+cdb.1: readme.md
+	pandoc -s -f markdown -t man $< -o $@
+
+install: ${TARGET} lib${TARGET}.a cdb.1
+	install -p -D ${TARGET} ${DESTDIR}/bin/${TARGET}
+	install -p -m 644 -D lib${TARGET}.a ${DESTDIR}/lib/lib${TARGET}.a
+	install -p -m 644 -D cdb.1 ${DESTDIR}/man/cdb.1
+	install -p -m 644 -D cdb.c cdb.h main.c LICENSE readme.md makefile -t ${DESTDIR}/src
+	install -p -D t ${DESTDIR}/src/t
+
+dist: install
+	tar zcf ${TARGET}.tgz ${DESTDIR}
 
 clean:
 	git clean -dfx

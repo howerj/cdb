@@ -1,13 +1,51 @@
-# CDB Clone - Constant Database
+% cdb(1) | Constant Database v1.00
 
-- Author: Richard James Howe
-- License: Unlicense
-- Repository: <https://github.com/howerj/cdb>
-- Email: howe.r.j.89@gmail.com
+# NAME
+
+CDB - An interface to the Constant Database Library
+
+# SYNOPSES
+
+cdb -h
+
+cdb -\[cdkst\] file.cdb
+
+cdb -q file.cdb key \[record#\]
+
+# DESCRIPTION
+
+	Author:     Richard James Howe
+	License:    Unlicense
+	Repository: <https://github.com/howerj/cdb>
+	Email:      howe.r.j.89@gmail.com
 
 A clone of the [CDB][] database, a simple, read-only (once created) database.
-The database is designed so it can be embedded into a microcontroller if
-needed.
+The database library is designed so it can be embedded into a microcontroller 
+if needed. This program can be used for creating and querying CDB databases,
+which are key-value pairs of binary data.
+
+# OPTIONS
+
+**-h** : print out this help message and exit successfully
+
+**-t** *file.cdb* : run internal tests, exit with zero on a pass
+
+**-c**  *file.cdb* : run in create mode
+
+**-d**  *file.cdb* : dump the database
+
+**-k**  *file.cdb* : dump the keys in the database
+
+**-s**  *file.cdb* : print statistics about the database
+
+**-q**  *file.cdb key record-number* : query the database for a key, with an optional record
+
+# EXAMPLES
+
+# RETURN VALUE
+
+cdb returns zero on success/key found, and a non zero value on failure. Two is
+returned if a key is not found.
 
 # Build Requirements
 
@@ -18,28 +56,7 @@ Type 'make' to build the *cdb* executable and library.
 
 Type 'make test' to build and run the *cdb* tests.
 
-# Command Line Options
-
-For a full list of command line options and a brief description of the program
-you can build the program and then run the command './cdb -h'.
-
-# CDB C API
-
-There are a few goals that the API has:
-
-* It is simple, there should be few functions and data structures.
-* The API is fairly easy to use.
-* There should be minimal dependencies on the C standard library.
-* The user should decide when, where and how allocations are performed. The
-  working set should be small.
-
-Some of these goals are in conflict, being able to control allocations and
-having minimal dependencies allow the library to be used in an embedded system,
-however it means that in order to do very basic things the user has to
-provide a series of callbacks. The callbacks are simple to implement on a
-hosted system, examples are provided in [main.c][].
-
-# Input/Dump Format
+# INPUT/DUMP FORMAT
 
 The input and dump format follow the same pattern, some ASCII text specifying
 the beginning of a record and then some binary data with some separators, and
@@ -58,7 +75,7 @@ An example, encoding the key value pair "abc" to "def" and "G" to "hello":
 	+3,3:abc->def
 	+1,5:G->hello
 
-# File Format
+# FILE FORMAT
 
 The file format is incredibly simple, it is designed so that only the header
 and the hash table index needs to be stored in memory during generation of the
@@ -72,10 +89,10 @@ compile time options, creating an incompatible format). All word values are
 stored in little-endian format.
 
 The initial hash table contains an array of 256 2-word values, as mentioned.
-The words are; a position of a hash table in the file and the number of values
+The words are; a position of a hash table in the file and the number of buckets
 in that hash table, stored in that order. To lookup a key the key is first
-hashed, the lowest eight bits of the hash are used to index into this table and
-if there are values in this hash the search then proceeds to the second hash
+hashed, the lowest eight bits of the hash are used to index into the initial table 
+and if there are values in this hash the search then proceeds to the second hash
 table at the end of the file.
 
 The hash tables at the end of the file contains an array of two word records,
@@ -113,34 +130,63 @@ available here <http://www.unixuser.org/~euske/doc/cdbinternals/> and the
 script itself is available at the bottom of that page
 <http://www.unixuser.org/~euske/doc/cdbinternals/pycdb.py>.
 
-# To Do List
+	         Constant Database Sections
+	.-------------------------------------------.
+	|   256 Bucket Initial Hash Table (2KiB)    |
+	.-------------------------------------------.
+	|            Key Value Pairs                |
+	.-------------------------------------------.
+	|       0-256 Secondary Hash Tables         |
+	.-------------------------------------------.
 
-- [x] Implement basic functionality in library.
-  - [x] Implement database dump
-  - [x] Implement key dump
-  - [x] Implement key retrieval
-  - [x] Implement multiple key retrieval
-  - [x] Implement database write
-- [ ] Improve code quality
-  - [x] Make built in self test
-  - [ ] Add a test script
-  - [ ] Add assertions wherever possible
-- [x] Turn into library
-  - [ ] Settle on an API.
-- [x] Allow allocation and file system operations to be user specified.
-- [ ] Allow compile time customization of library; 32 or 64 bit, maybe even 16-bit. Endianess also.
-- [x] Document format and command line options.
-  - [ ] Add ASCII diagrams to describe format
-  - [ ] Improve prose of format description
-- [ ] Mimic command line options for original program?
-- [x] Add options for dumping databases and collecting database statistics.
-- [ ] Benchmark the system.
-  - [ ] Adding timing information to operations.
-  - [ ] Possible improvements include larger I/O buffering and avoiding
-    scanf/printf functions (using custom numeric routines instead).
-  - [ ] Different hash functions could improve performance
+	    256 Bucket Initial Hash Table (2KiB)
+	.-------------------------------------------.
+	| { P, L } | { P, L } | { P, L } |   ...    |
+	.----------+----------+----------+----------.
+	|   ...    | { P, L } | { P, L } | { P, L } |
+	.-------------------------------------------.
+	P = Position of secondary hash table
+	L = Number of buckets in secondary hash table
 
-# Wish List
+	.-------------------------------------------.
+	| { KL, VL } | KEY ...      | VALUE ...     |
+	.-------------------------------------------.
+	KL    = Key Length
+	VL    = Value Length
+	KEY   = Varible length binary data key
+	VALUE = Variable length binary value
+
+	 0-256 Variable Length Secondary Hash Tables
+	.---------------------.
+	| { H, P } | { H, P } |
+	.----------+----------+---------------------.
+	| { H, P } |   ...    |   ...    | { H, P } |
+	.----------+----------+----------+----------.
+	| { H, P } |   ...    | { H, P } |
+	.--------------------------------.
+	H = Hash
+	P = Position of Key-Value Pair
+
+# CDB C API
+
+There are a few goals that the API has:
+
+* It is simple, there should be few functions and data structures.
+* The API is fairly easy to use.
+* There should be minimal dependencies on the C standard library. The
+  library itself should be small and not be a huge, non-portable, "optimized",
+  mess.
+* The user should decide when, where and how allocations are performed. The
+  working set should be small.
+* The database driver should be somewhat tolerant to erroneous files.
+
+Some of these goals are in conflict, being able to control allocations and
+having minimal dependencies allow the library to be used in an embedded system,
+however it means that in order to do very basic things the user has to
+provide a series of callbacks. The callbacks are simple to implement on a
+hosted system, examples are provided in [main.c][] in the project repository.
+
+# POSSIBLE DIRECTIONS
 
 The wish list contains a list of ideas that may be cool to implemented, but
 probably will not be, or can be implemented on top of the program anyway.
@@ -172,6 +218,46 @@ probably will not be, or can be implemented on top of the program anyway.
 - Instead of having two separate structures for the allocator and the file
   operations, the structure could be merged.
 
+# BUGS
+
+For any bugs, email the [author][]. It comes with a 'works on my machine
+guarantee'. The code has been written with the intention of being portable, and
+should work on 32-bit and 64-bit machines. It is tested more frequently on a
+64-bit Linux machine, and less so on frequently on Windows. Please give a
+detailed bug report (including but not limited to what machine/OS you are 
+running on, a failing example test case, etcetera).
+
+- [ ] Improve code quality
+  - [ ] Add assertions wherever possible
+  - [ ] Stress test (attempt creation >4GiB DBs, overflow conditions, etcetera)
+  - [ ] Validate data read off disk; lowest 8 bits of stored hash match bucket,
+    pointers are within the right section, and refuse to read/seek if invalid. 
+  - [ ] Use less memory when holding index in memory
+- [x] Turn into library
+  - [ ] Settle on an API
+  - [ ] add cdb\_read, cdb\_seek, ...
+- [ ] Allow compile time customization of library
+  - [ ] 16/32/64 bit version of the database
+  - [ ] configurable endianess
+- [x] Document format and command line options.
+  - [ ] Add ASCII diagrams to describe format
+  - [ ] Improve prose of format description
+  - [ ] Generate manual page from this 'readme.md' by either using
+  [ronn][] or [pandoc][]
+  - [ ] Remove this list once it is complete
+- [ ] Mimic command line options for original program?
+- [ ] Benchmark the system.
+  - [ ] Adding timing information to operations.
+  - [ ] Possible improvements include larger I/O buffering and avoiding
+    scanf/printf functions (using custom numeric routines instead).
+  - [ ] Different hash functions could improve performance
+
+# COPYRIGHT
+
+The libraries, documentation, and the program at licensed under the 
+[Unlicense][]. Do what thou wilt.
+
+[author]: howe.r.j.89@gmail.com
 [main.c]: main.c
 [CDB]: https://cr.yp.to/cdb.html
 [GNU Make]: https://www.gnu.org/software/make/
@@ -181,3 +267,6 @@ probably will not be, or can be implemented on top of the program anyway.
 [CRC]: https://en.wikipedia.org/wiki/Cyclic_redundancy_check
 [shrink]: https://github.com/howerj/shrink
 [djb2]: http://www.cse.yorku.ca/~oz/hash.html
+[ronn]: https://www.mankier.com/1/ronn
+[pandoc]: https://pandoc.org/
+[Unlicense]: https://en.wikipedia.org/wiki/Unlicense

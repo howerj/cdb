@@ -1,6 +1,9 @@
+*.1
 *.a
 *.cdb
 *.db
 *.o
+*.tgz
 *.txt
 cdb
+install/*

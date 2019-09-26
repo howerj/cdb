@@ -56,7 +56,7 @@ CDB_API int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value);
 CDB_API int cdb_get_record(cdb_t *cdb, const cdb_buffer_t *key, int record, cdb_file_pos_t *value); /* returns: -1 on error, 0 on not found, 1 on found */
 CDB_API int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param);
 CDB_API int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value);
-CDB_API int cdb_tests(cdb_file_operators_t *ops, cdb_allocator_t *allocator); /* returns 0 on success (or NDEBUG defined), -1 on failure */
+CDB_API int cdb_tests(cdb_file_operators_t *ops, cdb_allocator_t *allocator, const char *test_file); /* returns 0 on success (or NDEBUG defined), -1 on failure */
 
 CDB_API void *cdb_get_file(cdb_t *cdb);
 
