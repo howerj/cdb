@@ -36,6 +36,7 @@ install: ${TARGET} lib${TARGET}.a cdb.1
 	install -p -D ${TARGET} ${DESTDIR}/bin/${TARGET}
 	install -p -m 644 -D lib${TARGET}.a ${DESTDIR}/lib/lib${TARGET}.a
 	install -p -m 644 -D cdb.1 ${DESTDIR}/man/cdb.1
+	mkdir -p ${DESTDIR}/src
 	install -p -m 644 -D cdb.c cdb.h main.c LICENSE readme.md makefile -t ${DESTDIR}/src
 	install -p -D t ${DESTDIR}/src/t
 

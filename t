@@ -15,6 +15,7 @@ make cdb;
 +1,0:X->
 +1,1:a->b
 +1,1:a->b
++1,1:a->c
 +1,5:b->hello
 +1,5:c->world
 +4,7:open->seasame
@@ -23,7 +24,8 @@ EOF
 ./cdb -q 3.cdb a
 ./cdb -q 3.cdb a 0
 ./cdb -q 3.cdb a 1
-./cdb -q 3.cdb a 2 && exit 1
+./cdb -q 3.cdb a 2
+./cdb -q 3.cdb a 3 && exit 1
 ./cdb -q 3.cdb X
 ./cdb -q 3.cdb ""
 ./cdb -q 3.cdb XXX && exit 1

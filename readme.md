@@ -8,7 +8,7 @@ CDB - An interface to the Constant Database Library
 
 cdb -h
 
-cdb -\[cdkst\] file.cdb
+cdb -\[rcdkstV\] file.cdb
 
 cdb -q file.cdb key \[record#\]
 
@@ -38,23 +38,53 @@ which are key-value pairs of binary data.
 
 **-s**  *file.cdb* : print statistics about the database
 
+**-V**  *file.cdb* : validate database
+
+**-r**  *file.cdb* : read keys in a read-query-print loop
+
 **-q**  *file.cdb key record-number* : query the database for a key, with an optional record
 
 # EXAMPLES
+
+Creating a database, called 'example.cdb':
+
+	$ ./cdb -c example.cdb
+	+0,1:->X
+	+1,0:Y->
+	+1,1:a->b
+	+1,1:a->b
+	+1,2:a->ba
+	+5,5:hello->world
+
+Note that zero length keys and values are valid, and that duplicate keys are
+allowed, even keys with the same value, a key with the specified value is
+created for each duplicate, just like a non-duplicate key.
+
+Looking up values in the created database:
+
+	./cdb -q example.cdb ""
+	./cdb -q example.cdb Y
+	./cdb -q example.cdb a
+	./cdb -q example.cdb a 0
+	./cdb -q example.cdb a 1
+	./cdb -q example.cdb a 2
+	./cdb -q example.cdb hello
+
+This looks up the keys.
+
+Dumping a database:
+
+	$ ./cdb -d example.cdb
+
+A database dump can be read straight back in to create another database:
+
+	$ ./cdb -d example.cdb | ./cdb -c should_have_just_used_copy.cdb
+
 
 # RETURN VALUE
 
 cdb returns zero on success/key found, and a non zero value on failure. Two is
 returned if a key is not found.
-
-# Build Requirements
-
-[GNU Make][] and a [C Compiler][]. The library is written in pure [C99][] and
-should be fairly simple to port to another platform.
-
-Type 'make' to build the *cdb* executable and library.
-
-Type 'make test' to build and run the *cdb* tests.
 
 # INPUT/DUMP FORMAT
 
@@ -186,6 +216,20 @@ however it means that in order to do very basic things the user has to
 provide a series of callbacks. The callbacks are simple to implement on a
 hosted system, examples are provided in [main.c][] in the project repository.
 
+# BUILD REQUIREMENTS
+
+If you are building the program from the repository at
+<https://github.com/howerj/cdb> you will need [GNU Make][] and a 
+[C Compiler][]. The library is written in pure [C99][] and
+should be fairly simple to port to another platform. Other [Make][]
+implementations may work, however they have not been tested.
+
+Type 'make' to build the *cdb* executable and library.
+
+Type 'make test' to build and run the *cdb* internal tests. The script called
+'t', written in [sh][], does more testing, and tests that the user interface is
+working correctly.
+
 # POSSIBLE DIRECTIONS
 
 The wish list contains a list of ideas that may be cool to implemented, but
@@ -270,3 +314,5 @@ The libraries, documentation, and the program at licensed under the
 [ronn]: https://www.mankier.com/1/ronn
 [pandoc]: https://pandoc.org/
 [Unlicense]: https://en.wikipedia.org/wiki/Unlicense
+[Make]: https://en.wikipedia.org/wiki/Make_(software)
+[sh]: https://en.wikipedia.org/wiki/Bourne_shell
