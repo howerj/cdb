@@ -10,6 +10,7 @@ extern "C" {
 #endif
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifndef CDB_API
 #define CDB_API /* Used to apply attributes to exported functions */
@@ -17,6 +18,7 @@ extern "C" {
 
 struct cdb;
 typedef struct cdb cdb_t;
+typedef uint32_t cdb_word_t;
 
 enum { CDB_SEEK_START, CDB_SEEK_CURRENT, CDB_SEEK_END, };
 enum { CDB_RO_MODE, CDB_RW_MODE };
@@ -29,12 +31,12 @@ typedef struct {
 } cdb_allocator_t; /* custom allocator interface; mostly used for creation of data-base */
 
 typedef struct {
-	long (*read)(void *file, void *buf, size_t length);
-	long (*write)(void *file, void *buf, size_t length); /* (conditionally option) needed for creation only */
-	long (*seek)(void *file, long offset, long whence);
+	cdb_word_t (*read)(void *file, void *buf, size_t length);
+	cdb_word_t (*write)(void *file, void *buf, size_t length); /* (conditionally option) needed for creation only */
+	int (*seek)(void *file, long offset, long whence);
 	void *(*open)(const char *name, int mode);
-	long (*close)(void *file);
-	long (*flush)(void *file); /* (optional) called at end of successful creation */
+	int (*close)(void *file);
+	int (*flush)(void *file); /* (optional) called at end of successful creation */
 } cdb_file_operators_t; /* a file abstraction layer, could point to memory, flash, or disk */
 
 typedef struct {
@@ -56,9 +58,13 @@ CDB_API int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value);
 CDB_API int cdb_get_record(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, long record);
 CDB_API int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param);
 CDB_API int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value);
+CDB_API int cdb_seek(cdb_t *cdb, long position, long whence);
+CDB_API int cdb_read_word(cdb_t *cdb, cdb_word_t *word);
+CDB_API int cdb_read_word_pair(cdb_t *cdb, cdb_word_t *w1, cdb_word_t *w2);
 CDB_API int cdb_tests(cdb_file_operators_t *ops, cdb_allocator_t *allocator, const char *test_file);
 
-CDB_API void *cdb_get_file(cdb_t *cdb);
+/* returns: number of characters read in, zero on error or length == 0 */
+CDB_API cdb_word_t cdb_read(cdb_t *cdb, void *buf, size_t length);
 
 #ifdef __cplusplus
 }

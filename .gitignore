@@ -2,7 +2,10 @@
 *.a
 *.cdb
 *.db
+*.dll
+*.exe
 *.o
+*.so
 *.tgz
 *.txt
 cdb

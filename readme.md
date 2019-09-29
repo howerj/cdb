@@ -1,4 +1,4 @@
-% cdb(1) | Constant Database v1.00
+% cdb(1) | Constant Database
 
 # NAME
 
@@ -8,7 +8,9 @@ CDB - An interface to the Constant Database Library
 
 cdb -h
 
-cdb -\[rcdkstV\] file.cdb
+cdb -\[cdkstV\] file.cdb
+
+cdb [-p prompt] -r file.cdb
 
 cdb -q file.cdb key \[record#\]
 
@@ -43,6 +45,8 @@ which are key-value pairs of binary data.
 **-r**  *file.cdb* : read keys in a read-query-print loop
 
 **-q**  *file.cdb key record-number* : query the database for a key, with an optional record
+
+**-p** prompt : set prompt for read mode
 
 # EXAMPLES
 
@@ -104,6 +108,33 @@ An example, encoding the key value pair "abc" to "def" and "G" to "hello":
 
 	+3,3:abc->def
 	+1,5:G->hello
+
+When the program is in [REPL][] mode (using the **-r** option) there are
+several commands that can be issued. These are:
+
+	q - quit the program
+	s - print statistics about the open database
+	k - print all keys in the database
+	d - dump the entire database out
+	+ - retrieve a single from the database if it exists
+
+The '+' option takes the format:
+
+	+key-length:KEY
+
+Or:
+	+key-length#record-number:KEY
+
+All commands should end in a newline. If a key is searched for and it is found
+it is printed out in the following format:
+
+	value-length:VALUE
+
+If the value was not found, or there was a format, a single '?' is printed.
+Helpful.
+
+Read mode has a prompt, which can be set or disabled with the **-p** option at
+startup.
 
 # FILE FORMAT
 
@@ -216,19 +247,103 @@ however it means that in order to do very basic things the user has to
 provide a series of callbacks. The callbacks are simple to implement on a
 hosted system, examples are provided in [main.c][] in the project repository.
 
+There are two sets of operations that most users will want to perform; creating
+a database and reading keys. After the callbacks have been provided, to create
+a database requires opening up a new database in create mode:
+
+	/* error handling omitted for brevity */
+	cdb_t *cdb = NULL;
+	cdb_file_operators_t ops = { /* Your file callbacks go here */ };
+	cdb_allocator_t allocator = { /* Your memory callbacks go here */ };
+	cdb_open(&cdb, &ops, &allocator, 1, "example.cdb");
+	cdb_buffer_t key   = { .length = 5, .buffer = "hello" };
+	cdb_buffer_t value = { .length = 5, .buffer = "world" };
+	cdb_add(cdb, &key, &value);
+	cdb_close(cdb);
+
+If you are dealing with mostly NUL terminated ASCII/UTF-8 strings it is worth
+creating a function to deal with this:
+
+	int cdb_add_string(cdb_t *cdb, const char *key, const char *value) {
+		assert(cdb);
+		assert(key);
+		assert(value);
+		const cdb_buffer_t k = { .length = strlen(key),   .buffer = (char*)key   };
+		const cdb_buffer_t v = { .length = strlen(value), .buffer = (char*)value };
+		return cdb_add(cdb, &k, &v);
+	}
+
+Note that you *cannot* query for a key from a database opened up in create 
+mode and you *cannot* add a key-value pair to a database opened up in read
+mode.
+
+To search for a key within the database, you open up a database connection in
+read mode (create = 0):
+
+	/* error handling omitted for brevity */
+	cdb_t *cdb = NULL;
+	cdb_file_operators_t ops = { /* Your file callbacks go here */ };
+	cdb_allocator_t allocator = { /* Your memory callbacks go here */ };
+	cdb_open(&cdb, &ops, &allocator, 1, "example.cdb");
+	cdb_buffer_t key = { .length = 5, .buffer = "hello" };
+	cdb_file_pos_t value = { 0, 0 };
+	cdb_get(cdb, &key, &value);
+	/* use cdb_seek, then cdb_read, to use returned value */
+	cdb_close(cdb);
+
+Upon retrieval of a key the database does not allocate a value for you, instead
+it provides an object consisting of a file position and a length of the value.
+This can be read from wherever the database is stored with the function
+'cdb\_read'. Before issuing a read, 'cdb\_seek' *must* be called as the file
+handle may be pointing to a different area in the database.
+
+If a read or a seek is issued that goes outside of the bounds of the database
+then all subsequent database operations on that handle will fail, not just
+reads or seeks. The only valid thing to do on a database that has returned a
+negative number is to called 'cdb\_close' and never use the handle again.
+
+As there are potentially duplicate keys, the function 'cdb\_get\_record' can be
+used to query for duplicates. Calculating the number of duplicates can be done
+by repeatedly calling 'cdb\_get\_record' with a higher record number until the
+call fails.
+
+This can be done like so:
+
+	/* cdb setup...*/
+	int r = 0, i = 0;
+	do {
+		r = cdb_get_record(&cdb, key, value, i++);
+		if (r == 1) {
+			/* do stuff with value */
+		}
+	} while (r < 1);
+
+There are several things that could be done to speed up the database but this
+would complicate the implementation and the API.
+
 # BUILD REQUIREMENTS
 
 If you are building the program from the repository at
-<https://github.com/howerj/cdb> you will need [GNU Make][] and a 
-[C Compiler][]. The library is written in pure [C99][] and
-should be fairly simple to port to another platform. Other [Make][]
-implementations may work, however they have not been tested.
+<https://github.com/howerj/cdb> you will need [GNU Make][] and a [C
+Compiler][]. The library is written in pure [C99][] and should be fairly simple
+to port to another platform. Other [Make][] implementations may work, however
+they have not been tested. [git][] is also used as part of the build system.
+
+First clone the repository and change directory to the newly clone repository:
+
+	git clone https://github.com/howerj/cdb cdb
+	cd cdb
 
 Type 'make' to build the *cdb* executable and library.
 
 Type 'make test' to build and run the *cdb* internal tests. The script called
 't', written in [sh][], does more testing, and tests that the user interface is
-working correctly.
+working correctly. 'make dist' is used to create a compressed tar file for
+distribution. 'make install' can be used to install the binaries, however the
+default installation directory (which can be set with the 'DESTDIR' makefile
+variable) installs to a directory called 'install' within the repository - it
+will not actually install anything. Changing 'DESTDIR' to '/usr' should install
+everything properly.
 
 # POSSIBLE DIRECTIONS
 
@@ -272,7 +387,7 @@ detailed bug report (including but not limited to what machine/OS you are
 running on, a failing example test case, etcetera).
 
 - [ ] Improve code quality
-  - [ ] Add assertions wherever possible
+  - [x] Add assertions wherever possible
   - [ ] Stress test (attempt creation >4GiB DBs, overflow conditions, etcetera)
   - [ ] Validate data read off disk; lowest 8 bits of stored hash match bucket,
     pointers are within the right section, and refuse to read/seek if invalid. 
@@ -280,16 +395,14 @@ running on, a failing example test case, etcetera).
 - [ ] Improve error reporting
 - [x] Turn into library
   - [ ] Settle on an API
-  - [ ] add cdb\_read, cdb\_seek, ...
 - [ ] Allow compile time customization of library
   - [ ] 16/32/64 bit version of the database
   - [ ] configurable endianess
 - [x] Document format and command line options.
-  - [x] Add ASCII diagrams to describe format
   - [ ] Improve prose of format description
-  - [x] Generate manual page from this 'readme.md' by either using
-  [ronn][] or [pandoc][]
   - [ ] Remove this list once it is complete
+- [ ] Split out the callbacks in [main.c][] into a file called 'hosted.c' so
+  the callbacks can be reused.
 - [ ] Benchmark the system.
   - [ ] Adding timing information to operations.
   - [ ] Possible improvements include larger I/O buffering and avoiding
@@ -316,3 +429,5 @@ The libraries, documentation, and the program at licensed under the
 [Unlicense]: https://en.wikipedia.org/wiki/Unlicense
 [Make]: https://en.wikipedia.org/wiki/Make_(software)
 [sh]: https://en.wikipedia.org/wiki/Bourne_shell
+[git]: https://git-scm.com/
+[REPL]: https://en.wikipedia.org/wiki/Read%E2%80%93eval%E2%80%93print_loop
