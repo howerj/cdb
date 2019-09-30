@@ -324,18 +324,12 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output) {
 	if (cdb_foreach(cdb, cdb_stats, &s) < 0)
 		return -1;
 
-	cdb_word_t pos = 0, num = 0;
 	for (size_t i = 0; i < 256; i++) {
 		if (cdb_seek(cdb, i * (2u * sizeof (cdb_word_t)), CDB_SEEK_START) < 0)
 			return -1;
-		cdb_word_t npos = 0, nnum = 0;
-		if (cdb_read_word_pair(cdb, &npos, &nnum) < 0)
+		cdb_word_t pos = 0, num = 0;
+		if (cdb_read_word_pair(cdb, &pos, &num) < 0)
 			return -1;
-		/* TODO: Do this check in the foreach loop instead */
-		if (i && npos != (pos + (num * (2u * sizeof (cdb_word_t)))))
-			return -1; /* invalid format */
-		pos = npos;
-		num = nnum;
 		collisions += num > 2ul;
 		entries += num;
 		occupied += num != 0;
@@ -381,7 +375,7 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output) {
 		return -1;
 	if (fprintf(output, "top hash table used/collisions:\t%lu/%lu/%lu\n", occupied, entries, collisions) < 0)
 		return -1;
-	if (fprintf(output, "hash tables min/avg/max:\t%lu/%g/%lu/\n", hmin, avg_hash_length, hmax) < 0)
+	if (fprintf(output, "hash tables min/avg/max:\t%lu/%g/%lu\n", hmin, avg_hash_length, hmax) < 0)
 		return -1;
 	if (fprintf(output, "hash tables collisions/buckets:\t%lu/%lu\n", s.records - distances[0], entries) < 0)
 		return -1;
@@ -541,8 +535,9 @@ Email:   howe.r.j.89@gmail.com\n\
 Repo:    https://github.com/howerj/cdb\n\
 License: The Unlicense\n\
 Version: %s\n\
+Size:    %d\n\
 Notes:   See manual pages or project website for more information.\n\n";
-	return fprintf(output, usage, arg0, VERSION);
+	return fprintf(output, usage, arg0, VERSION, (int)(sizeof (cdb_word_t) * CHAR_BIT));
 }
 
 int main(int argc, char **argv) {
@@ -575,7 +570,7 @@ int main(int argc, char **argv) {
 	while ((ch = cdb_getopt(&opt, argc, argv, "hr:t:c:d:k:s:q:V:p:")) != -1) {
 		switch (ch) {
 		case 'h': return help(stdout, argv[0]), 0;
-		case 't': return cdb_tests(&ops, &allocator, opt.arg);
+		case 't': return -cdb_tests(&ops, &allocator, opt.arg);
 		case 'r': file = opt.arg; mode = READ;   break;
 		case 'c': file = opt.arg; mode = CREATE;   break;
 		case 'd': file = opt.arg; mode = DUMP;     break;

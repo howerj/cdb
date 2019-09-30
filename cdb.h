@@ -16,9 +16,20 @@ extern "C" {
 #define CDB_API /* Used to apply attributes to exported functions */
 #endif
 
+#ifdef CDB_64
+typedef uint64_t cdb_word_t; /* TODO: fix this mode, it is currently not working */
+#error Not Implemented
+#else
+#ifdef CDB_16
+typedef uint16_t cdb_word_t;
+#else
+typedef uint32_t cdb_word_t;
+#define CDB_32
+#endif
+#endif
+
 struct cdb;
 typedef struct cdb cdb_t;
-typedef uint32_t cdb_word_t;
 
 enum { CDB_SEEK_START, CDB_SEEK_CURRENT, CDB_SEEK_END, };
 enum { CDB_RO_MODE, CDB_RW_MODE };
@@ -56,6 +67,7 @@ CDB_API int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *al
 CDB_API int cdb_close(cdb_t *cdb);  /* free cdb, close (and write to disk if in create mode) */
 CDB_API int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value);
 CDB_API int cdb_get_record(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, long record);
+CDB_API int cdb_get_count(cdb_t *cdb, const cdb_buffer_t *key, long *count);
 CDB_API int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param);
 CDB_API int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value);
 CDB_API int cdb_seek(cdb_t *cdb, long position, long whence);

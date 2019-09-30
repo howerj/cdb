@@ -302,21 +302,9 @@ then all subsequent database operations on that handle will fail, not just
 reads or seeks. The only valid thing to do on a database that has returned a
 negative number is to called 'cdb\_close' and never use the handle again.
 
-As there are potentially duplicate keys, the function 'cdb\_get\_record' can be
-used to query for duplicates. Calculating the number of duplicates can be done
-by repeatedly calling 'cdb\_get\_record' with a higher record number until the
-call fails.
-
-This can be done like so:
-
-	/* cdb setup...*/
-	int r = 0, i = 0;
-	do {
-		r = cdb_get_record(&cdb, key, value, i++);
-		if (r == 1) {
-			/* do stuff with value */
-		}
-	} while (r < 1);
+As there are potentially duplicate keys, the function 'cdb\_get\_count' can be
+used to query for duplicates. It returns the number of records that are in the
+database for a given key.
 
 There are several things that could be done to speed up the database but this
 would complicate the implementation and the API.
@@ -343,18 +331,14 @@ distribution. 'make install' can be used to install the binaries, however the
 default installation directory (which can be set with the 'DESTDIR' makefile
 variable) installs to a directory called 'install' within the repository - it
 will not actually install anything. Changing 'DESTDIR' to '/usr' should install
-everything properly.
+everything properly. [pandoc][] is required to build the manual page for
+installation, which is generated from this [markdown][] file.
 
 # POSSIBLE DIRECTIONS
 
 The wish list contains a list of ideas that may be cool to implemented, but
 probably will not be, or can be implemented on top of the program anyway.
 
-- One way of improving performance would be to keep the first, initial, hash
-  table in memory. This is 2KiB, however this conflicts with a goal of minimal
-  memory usage. In fact all of the indexes could be stored in memory, speeding
-  up the search. One, or both, levels could be enabled by a compile time
-  option.
 - Adding a header along with a [CRC][] for error detection, lessons learned
   from other file formats can be incorporated, some guides are available at:
   - <https://softwareengineering.stackexchange.com/questions/171201>
@@ -373,7 +357,10 @@ probably will not be, or can be implemented on top of the program anyway.
 - Integrate with utilities like [littlefs][] or other embedded file systems.
 - A few functions could be added to allow the database to be updated after it
   has been created, obviously this would be fraught with danger, but it is
-  possible to extend the database after creation despite the name.
+  possible to extend the database after creation despite the name. Interfaces
+  for adding new keys and replacing keys would be fairly easy, and in place
+  key deletion and recompacting the database would be more difficult. File
+  locking callbacks could be provided for if these were to be added.
 - Instead of having two separate structures for the allocator and the file
   operations, the structure could be merged.
 
@@ -387,20 +374,14 @@ detailed bug report (including but not limited to what machine/OS you are
 running on, a failing example test case, etcetera).
 
 - [ ] Improve code quality
-  - [x] Add assertions wherever possible
   - [ ] Stress test (attempt creation >4GiB DBs, overflow conditions, etcetera)
   - [ ] Validate data read off disk; lowest 8 bits of stored hash match bucket,
     pointers are within the right section, and refuse to read/seek if invalid. 
   - [ ] Use less memory when holding index in memory
-- [ ] Improve error reporting
-- [x] Turn into library
-  - [ ] Settle on an API
 - [ ] Allow compile time customization of library
-  - [ ] 16/32/64 bit version of the database
-  - [ ] configurable endianess
-- [x] Document format and command line options.
-  - [ ] Improve prose of format description
-  - [ ] Remove this list once it is complete
+  - [x] 16/32/64 bit version of the database
+  - [ ] allow run time configuration of 16/32/64 bit versions?
+  - [ ] allow code to be compiled out to save size
 - [ ] Split out the callbacks in [main.c][] into a file called 'hosted.c' so
   the callbacks can be reused.
 - [ ] Benchmark the system.
@@ -431,3 +412,4 @@ The libraries, documentation, and the program at licensed under the
 [sh]: https://en.wikipedia.org/wiki/Bourne_shell
 [git]: https://git-scm.com/
 [REPL]: https://en.wikipedia.org/wiki/Read%E2%80%93eval%E2%80%93print_loop
+[markdown]: https://daringfireball.net/projects/markdown/
