@@ -517,6 +517,7 @@ int cdb_get_record(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, l
 	return cdb_retrieve(cdb, key, value, &record);
 }
 
+/* TODO: Test cdb_get and cdb_get_count */
 int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value) {
 	assert(cdb);
 	assert(cdb->opened);

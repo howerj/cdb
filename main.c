@@ -410,7 +410,7 @@ static int cdb_query_prompt(cdb_t *cdb, FILE *input, FILE *output, const char *p
 	if (!key)
 		goto fail;
 	if (cdb_prompt(output, prompt) < 0)
-		return -1;
+		goto fail;
 	for (;;) {
 		unsigned long klen = 0;
 		const int ch0 = fgetc(input);
