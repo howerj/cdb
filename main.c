@@ -14,10 +14,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef VERSION
-#define VERSION "unknown"
-#endif
-
 #define UNUSED(X) ((void)(X))
 #define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
 #define MAX(X, Y) ((X) > (Y) ? (X) : (Y))
@@ -201,7 +197,7 @@ static int cdb_dump(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t 
 	assert(value);
 	assert(param);
 	FILE *output = param;
-	if (fprintf(output, "+%lu,%lu:", key->length, value->length) < 0)
+	if (fprintf(output, "+%lu,%lu:", (unsigned long)key->length, (unsigned long)value->length) < 0)
 		return -1;
 	if (cdb_print(cdb, key, output) < 0)
 		return -1;
@@ -218,7 +214,7 @@ static int cdb_dump_keys(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_p
 	assert(value);
 	assert(param);
 	FILE *output = param;
-	if (fprintf(output, "+%lu:", key->length) < 0)
+	if (fprintf(output, "+%lu:", (unsigned long)key->length) < 0)
 		return -1;
 	if (cdb_print(cdb, key, output) < 0)
 		return -1;
@@ -309,7 +305,7 @@ static int cdb_stats(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t
 
 #define DISTMAX (10)
 
-static int cdb_stats_print(cdb_t *cdb, FILE *output) {
+static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 	assert(cdb);
 	assert(output);
 	unsigned long distances[DISTMAX] = { 0 };
@@ -324,12 +320,25 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output) {
 	if (cdb_foreach(cdb, cdb_stats, &s) < 0)
 		return -1;
 
+	if (verbose) {
+		if (fputs("Initial hash table: \n", output) < 0)
+			return -1;
+	}
+
 	for (size_t i = 0; i < 256; i++) {
 		if (cdb_seek(cdb, i * (2u * sizeof (cdb_word_t)), CDB_SEEK_START) < 0)
 			return -1;
 		cdb_word_t pos = 0, num = 0;
 		if (cdb_read_word_pair(cdb, &pos, &num) < 0)
 			return -1;
+		if (verbose) {
+			if ((i % 4) == 0)
+				if (fprintf(output, "\n%3d:\t", (int)i) < 0)
+					return -1;
+			if (fprintf(output, "$%4lx %3ld, ", (long)pos, (long)num) < 0)
+				return -1;
+		}
+
 		collisions += num > 2ul;
 		entries += num;
 		occupied += num != 0;
@@ -354,7 +363,10 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output) {
 			distances[h]++;
 		}
 	}
-
+	if (verbose) {
+		if (fputs("\n\n", output) < 0)
+			return -1;
+	}
 	if (s.records == 0) {
 		s.min_key_length = 0;
 		s.min_value_length = 0;
@@ -406,7 +418,6 @@ static int cdb_query_prompt(cdb_t *cdb, FILE *input, FILE *output, const char *p
 	int r = 0;
 	size_t kmlen = IO_BUFFER_SIZE;
 	char *key = malloc(kmlen);
-	unsigned long record = 0;
 	if (!key)
 		goto fail;
 	if (cdb_prompt(output, prompt) < 0)
@@ -419,7 +430,7 @@ static int cdb_query_prompt(cdb_t *cdb, FILE *input, FILE *output, const char *p
 		case ' ': case '\t': case '\r': continue;
 		case '\n': goto prompt;
 		case 's': 
-			if (cdb_stats_print(cdb, output) < 0)
+			if (cdb_stats_print(cdb, output, 0) < 0)
 				goto fail;
 			continue;
 		case 'k': 
@@ -438,6 +449,7 @@ static int cdb_query_prompt(cdb_t *cdb, FILE *input, FILE *output, const char *p
 			goto wrong;
 
 		int ch1 = fgetc(input);
+		unsigned long record = 0;
 		if (ch1 == '#') {
 			if (fscanf(input, "%lu", &record) != 1)
 				goto wrong;
@@ -469,7 +481,7 @@ static int cdb_query_prompt(cdb_t *cdb, FILE *input, FILE *output, const char *p
 		} else if (g == 0) {
 			goto wrong;
 		} else {
-			if (fprintf(output, "%lu:", vp.length) < 0)
+			if (fprintf(output, "%lu:", (unsigned long)vp.length) < 0)
 				goto fail;
 			if (cdb_print(cdb, &vp, output) < 0)
 				goto fail;
@@ -527,6 +539,10 @@ static int cdb_validate(cdb_t *cdb) {
 static int help(FILE *output, const char *arg0) {
 	assert(output);
 	assert(arg0);
+	unsigned long version = cdb_version();
+	unsigned x = (version >>  0) & 0xff;
+	unsigned y = (version >>  8) & 0xff;
+	unsigned z = (version >> 16) & 0xff;
 	static const char *usage = "\
 Usage:   %s -h *OR* -[rcdkstV] file.cdb *OR* -q file.cdb key [record#]\n\
 Program: Constant Database Driver (clone of https://cr.yp.to/cdb.html)\n\
@@ -534,10 +550,10 @@ Author:  Richard James Howe\n\
 Email:   howe.r.j.89@gmail.com\n\
 Repo:    https://github.com/howerj/cdb\n\
 License: The Unlicense\n\
-Version: %s\n\
+Version: %u.%u.%u\n\
 Size:    %d\n\
 Notes:   See manual pages or project website for more information.\n\n";
-	return fprintf(output, usage, arg0, VERSION, (int)(sizeof (cdb_word_t) * CHAR_BIT));
+	return fprintf(output, usage, arg0, x, y, z, (int)(sizeof (cdb_word_t) * CHAR_BIT));
 }
 
 int main(int argc, char **argv) {
@@ -597,7 +613,7 @@ int main(int argc, char **argv) {
 	case READ:     r = cdb_query_prompt(cdb, stdin, stdout, prompt); break;
 	case DUMP:     r = cdb_foreach(cdb, cdb_dump, stdout);           break;
 	case KEYS:     r = cdb_foreach(cdb, cdb_dump_keys, stdout);      break;
-	case STATS:    r = cdb_stats_print(cdb, stdout);                 break;
+	case STATS:    r = cdb_stats_print(cdb, stdout, 0);              break;
 	case VALIDATE: r = cdb_validate(cdb);                            break;
 	case QUERY: {
 		if (opt.index >= argc)

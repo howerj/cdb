@@ -5,8 +5,8 @@
 #	-Wnull-dereference -Wjump-misses-init \
 #	-Wshadow 
 
-VERSION=1.0.0
-CFLAGS=-Wall -Wextra -fPIC -std=c99 -O2 -pedantic -g -fwrapv ${DEFINES} ${EXTRA} -DVERSION="\"${VERSION}\""
+VERSION=0x010001ul
+CFLAGS=-Wall -Wextra -fPIC -std=c99 -O2 -pedantic -g -fwrapv ${DEFINES} ${EXTRA} -DCDB_VERSION="${VERSION}"
 TARGET=cdb
 AR      = ar
 ARFLAGS = rcs
@@ -57,3 +57,16 @@ dist: install
 
 clean:
 	git clean -dfx
+
+cdb64: DEFINES=-DCDB_SIZE=64
+cdb64: clean ${TARGET}
+	mv ${TARGET} $@
+
+cdb32: DEFINES=-DCDB_SIZE=32
+cdb32: clean ${TARGET}
+	mv ${TARGET} $@
+
+cdb16: DEFINES=-DCDB_SIZE=16
+cdb16: clean ${TARGET}
+	mv ${TARGET} $@
+

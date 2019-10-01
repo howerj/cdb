@@ -1,24 +1,28 @@
 #!/bin/sh
 # CDB Test Script
-# - TODO: User Interface Tests, CLI options/help, Invalid file, ...
-RANDOMSRC=${RANDOMSRC:-/dev/urandom}
-TESTDB=test.cdb
-EMPTYDB=empty.cdb
+#
+# TODO: Automatically build and test different CDB versions
+RANDOMSRC=${RANDOMSRC:-/dev/urandom};
+TESTDB=test.cdb;
+EMPTYDB=empty.cdb;
+FAIL=0;
+CDB=${CDB:-cdb};
+
 set -x;
 set -e;
 set -u;
 
-make cdb;
+make ${CDB};
 
-./cdb -c ${EMPTYDB} <<EOF
+./${CDB} -c ${EMPTYDB} <<EOF
 EOF
-./cdb -t bist.cdb; 
-./cdb -d bist.cdb | sort > bist.txt;
-./cdb -c copy.cdb < bist.txt;
-./cdb -d copy.cdb | sort > copy.txt;
+./${CDB} -t bist.cdb; 
+./${CDB} -d bist.cdb | sort > bist.txt;
+./${CDB} -c copy.cdb < bist.txt;
+./${CDB} -d copy.cdb | sort > copy.txt;
 cmp bist.txt copy.txt;
 
-./cdb -c ${TESTDB} <<EOF
+./${CDB} -c ${TESTDB} <<EOF
 +0,1:->X
 +1,0:X->
 +1,1:a->b
@@ -30,7 +34,27 @@ cmp bist.txt copy.txt;
 EOF
 set +x;
 
-FAIL=0
+CMDS=$(cat<<EOF
++1#2:a
++4:open
++1#0:a
++1#1:a
+
+EOF
+);
+
+RES=$(cat<<EOF
+1:c
+7:seasame
+1:b
+1:b
+EOF
+);
+
+echo "${RES}" > res.txt;
+echo "${CMDS}" | ./${CDB} -p "" -r ${TESTDB} > cmds.txt;
+diff -w res.txt cmds.txt;
+
 
 t() {
 	R=$(eval "${1}");
@@ -53,17 +77,17 @@ f() {
 	fi;
 }
 
-t "./cdb -q ${TESTDB} a" b;
-t "./cdb -q ${TESTDB} a 0" b;
-t "./cdb -q ${TESTDB} a 1" b;
-t "./cdb -q ${TESTDB} a 2" c;
-f "./cdb -q ${TESTDB} a 3";
-t "./cdb -q ${TESTDB} X" "";
-f "./cdb -q ${TESTDB} XXX";
-t "./cdb -q ${TESTDB} \"\"" X;
-t "./cdb -q ${TESTDB} b" hello;
-t "./cdb -q ${TESTDB} c" world;
-t "./cdb -q ${TESTDB} open" seasame;
+t "./${CDB} -q ${TESTDB} a" b;
+t "./${CDB} -q ${TESTDB} a 0" b;
+t "./${CDB} -q ${TESTDB} a 1" b;
+t "./${CDB} -q ${TESTDB} a 2" c;
+f "./${CDB} -q ${TESTDB} a 3";
+t "./${CDB} -q ${TESTDB} X" "";
+f "./${CDB} -q ${TESTDB} XXX";
+t "./${CDB} -q ${TESTDB} \"\"" X;
+t "./${CDB} -q ${TESTDB} b" hello;
+t "./${CDB} -q ${TESTDB} c" world;
+t "./${CDB} -q ${TESTDB} open" seasame;
 
 for i in $(seq 0 9); do
 	for j in $(seq 0 9); do
@@ -75,17 +99,26 @@ for i in $(seq 0 9); do
 	done;
 done > seq.txt;
 
+dd if=/dev/zero of=invalid-1.cdb count=1 # Too small
+dd if=/dev/zero of=invalid-2.cdb count=4 # Invalid hash table pointers
+#dd if=${RANDOMSRC} of=invalid-3.cdb count=512
+
+f "./${CDB} -s invalid-1.cdb"
+f "./${CDB} -s invalid-2.cdb"
+#f "./${CDB} -s invalid-3.cdb"
+f "./${CDB} -s /dev/null"
+
 set -x
 
-./cdb -c seq.cdb < seq.txt;
-./cdb -d seq.cdb | sort > qes.txt;
+./${CDB} -c seq.cdb < seq.txt;
+./${CDB} -d seq.cdb | sort > qes.txt;
 
 cmp seq.txt qes.txt;
 
-./cdb -s ${EMPTYDB}
-./cdb -s seq.cdb;
-./cdb -s ${TESTDB}
-./cdb -s bist.cdb;
+./${CDB} -s ${EMPTYDB}
+./${CDB} -s seq.cdb;
+./${CDB} -s ${TESTDB}
+./${CDB} -s bist.cdb;
 
 set +x;
 
@@ -113,6 +146,6 @@ for i in $(seq 1 1000); do
 	echo "+${KLEN},${VLEN}:${KEY}->${VALUE}" >> ${FILE}.txt
 done;
 
-./cdb -c ${FILE}.cdb < ${FILE}.txt
+./${CDB} -c ${FILE}.cdb < ${FILE}.txt
 
 

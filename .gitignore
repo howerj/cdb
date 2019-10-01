@@ -9,4 +9,7 @@
 *.tgz
 *.txt
 cdb
+cdb16
+cdb32
+cdb64
 install/*

@@ -16,16 +16,18 @@ extern "C" {
 #define CDB_API /* Used to apply attributes to exported functions */
 #endif
 
-#ifdef CDB_64
-typedef uint64_t cdb_word_t; /* TODO: fix this mode, it is currently not working */
-#error Not Implemented
-#else
-#ifdef CDB_16
-typedef uint16_t cdb_word_t;
+/* TODO: Make size run time selectable? */
+#if defined(CDB_SIZE) && (CDB_SIZE == 64)
+typedef uint64_t cdb_word_t;
+#elif defined(CDB_SIZE) && (CDB_SIZE == 32)
+typedef uint32_t cdb_word_t;
+#elif defined(CDB_SIZE) && (CDB_SIZE == 16)
+typedef uint16_t cdb_word_t; /* TODO: Get this version working */
+#error Unimplemented feature
+#elif defined(CDB_SIZE)
+#error Invalid CDB Size
 #else
 typedef uint32_t cdb_word_t;
-#define CDB_32
-#endif
 #endif
 
 struct cdb;
@@ -39,7 +41,7 @@ typedef struct {
 	void *(*realloc)(void *arena, void *pointer, size_t length);
 	int (*free)(void *arena, void *pointer);
 	void *arena;
-} cdb_allocator_t; /* custom allocator interface; mostly used for creation of data-base */
+} cdb_allocator_t; /* custom allocator interface; mostly used for creation of database */
 
 typedef struct {
 	cdb_word_t (*read)(void *file, void *buf, size_t length);
@@ -51,16 +53,20 @@ typedef struct {
 } cdb_file_operators_t; /* a file abstraction layer, could point to memory, flash, or disk */
 
 typedef struct {
-	size_t length;
-	char *buffer;
+	cdb_word_t length; /* length of data */
+	char *buffer;      /* pointer to arbitrary data */
 } cdb_buffer_t; /* used to represent a key or value in memory */
 
 typedef struct {
-	unsigned long position;
-	unsigned long length;
+	cdb_word_t position; /* position in file, for use with cdb_read/cdb_seek */
+	cdb_word_t length;   /* length of data on disk, for use with cdb_read */
 } cdb_file_pos_t; /* used to represent a value on disk that can be accessed via 'cdb_file_operators_t' */
 
 typedef int (*cdb_callback)(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param);
+
+CDB_API unsigned long cdb_version(void); /* returns: version number in x.y.z format */
+/* returns: number of characters read in, zero on error or length == 0 */
+CDB_API cdb_word_t cdb_read(cdb_t *cdb, void *buf, cdb_word_t length);
 
 /* All functions return: < 0 on failure, 0 on success/not found, 1 on found */
 CDB_API int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator, int create, const char *file);
@@ -70,13 +76,10 @@ CDB_API int cdb_get_record(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *
 CDB_API int cdb_get_count(cdb_t *cdb, const cdb_buffer_t *key, long *count);
 CDB_API int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param);
 CDB_API int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value);
-CDB_API int cdb_seek(cdb_t *cdb, long position, long whence);
+CDB_API int cdb_seek(cdb_t *cdb, cdb_word_t position, int whence);
 CDB_API int cdb_read_word(cdb_t *cdb, cdb_word_t *word);
 CDB_API int cdb_read_word_pair(cdb_t *cdb, cdb_word_t *w1, cdb_word_t *w2);
 CDB_API int cdb_tests(cdb_file_operators_t *ops, cdb_allocator_t *allocator, const char *test_file);
-
-/* returns: number of characters read in, zero on error or length == 0 */
-CDB_API cdb_word_t cdb_read(cdb_t *cdb, void *buf, size_t length);
 
 #ifdef __cplusplus
 }

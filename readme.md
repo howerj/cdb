@@ -183,7 +183,8 @@ operation. This repeats until all bytes to be hashed are processed.
 
 Note that there is nothing in the file format that disallows duplicate keys in
 the database, in fact the API allows duplicate keys to be retrieved. Both key
-and data values can also be zero bytes long.
+and data values can also be zero bytes long. There are also no special
+alignment requirements on the data.
 
 The best documentation on the file format is a small pure python script that
 implements a set of functions for manipulating a CDB database, a description is
@@ -346,7 +347,13 @@ probably will not be, or can be implemented on top of the program anyway.
   - And the PNG Specification: <https://www.w3.org/TR/PNG/>
   This would make the format incompatible with other programs that
   manipulate the CDB file format however. But would allow the shrinking
-  of empty CDB databases, and to encode information about 
+  of empty CDB databases, and to encode information about pointer sizes and
+  the like. There is scope for adding a header in the key-value section after
+  the first 2KiB Initial Hash Table. A key-value pair that is not referenced
+  by any of the tables could be used to store CRC information, and other data.
+  Some CDB implementations may be able to detect this however, and report an
+  invalid file. The header would need to be 4KiB in if 32 and 64 bit versions
+  of this library were to be supported simultaneously.
 - (De)Compression could be added with the [shrink][] library, making the
   database smaller.
 - Various schemas, type information, and a query language could be built upon
@@ -369,17 +376,15 @@ probably will not be, or can be implemented on top of the program anyway.
 For any bugs, email the [author][]. It comes with a 'works on my machine
 guarantee'. The code has been written with the intention of being portable, and
 should work on 32-bit and 64-bit machines. It is tested more frequently on a
-64-bit Linux machine, and less so on frequently on Windows. Please give a
+64-bit Linux machine, and less frequently on Windows. Please give a
 detailed bug report (including but not limited to what machine/OS you are 
-running on, a failing example test case, etcetera).
+running on, compiler, compiler version, a failing example test case, etcetera).
 
 - [ ] Improve code quality
   - [ ] Stress test (attempt creation >4GiB DBs, overflow conditions, etcetera)
-  - [ ] Validate data read off disk; lowest 8 bits of stored hash match bucket,
-    pointers are within the right section, and refuse to read/seek if invalid. 
   - [ ] Use less memory when holding index in memory
+  - [ ] Use a fuzzer (like American Fuzzy Lop) to find faults
 - [ ] Allow compile time customization of library
-  - [x] 16/32/64 bit version of the database
   - [ ] allow run time configuration of 16/32/64 bit versions?
   - [ ] allow code to be compiled out to save size
 - [ ] Split out the callbacks in [main.c][] into a file called 'hosted.c' so
