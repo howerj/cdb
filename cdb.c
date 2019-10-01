@@ -11,7 +11,7 @@
 #include <limits.h>
 
 #ifndef CDB_VERSION
-#define CDB_VERSION (0x000000ul) /* known bad value */
+#define CDB_VERSION (((unsigned long)CDB_SIZE << 24) | 0x000000ul)
 #endif
 
 #ifndef CDB_TESTS_ON
@@ -670,7 +670,7 @@ static uint64_t xorshift128(uint64_t s[2]) {
 	return a + b;
 }
 
-#ifdef CDB_16 
+#if defined(CDB_SIZE) && CDB_SIZE == 16
 #define VECT (128ul)
 #define KLEN (64ul)
 #define VLEN (64ul)

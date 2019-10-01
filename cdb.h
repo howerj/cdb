@@ -16,14 +16,12 @@ extern "C" {
 #define CDB_API /* Used to apply attributes to exported functions */
 #endif
 
-/* TODO: Make size run time selectable? */
 #if defined(CDB_SIZE) && (CDB_SIZE == 64)
 typedef uint64_t cdb_word_t;
 #elif defined(CDB_SIZE) && (CDB_SIZE == 32)
 typedef uint32_t cdb_word_t;
 #elif defined(CDB_SIZE) && (CDB_SIZE == 16)
-typedef uint16_t cdb_word_t; /* TODO: Get this version working */
-#error Unimplemented feature
+typedef uint16_t cdb_word_t;
 #elif defined(CDB_SIZE)
 #error Invalid CDB Size
 #else
@@ -64,7 +62,7 @@ typedef struct {
 
 typedef int (*cdb_callback)(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param);
 
-CDB_API unsigned long cdb_version(void); /* returns: version number in x.y.z format */
+CDB_API unsigned long cdb_version(void); /* returns: version number in x.y.z format, top most bit is size */
 /* returns: number of characters read in, zero on error or length == 0 */
 CDB_API cdb_word_t cdb_read(cdb_t *cdb, void *buf, cdb_word_t length);
 
