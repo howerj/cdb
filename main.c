@@ -540,9 +540,9 @@ static int help(FILE *output, const char *arg0) {
 	assert(output);
 	assert(arg0);
 	unsigned long version = cdb_version();
-	unsigned x = (version >>  0) & 0xff;
+	unsigned x = (version >> 16) & 0xff;
 	unsigned y = (version >>  8) & 0xff;
-	unsigned z = (version >> 16) & 0xff;
+	unsigned z = (version >>  0) & 0xff;
 	static const char *usage = "\
 Usage:   %s -h *OR* -[rcdkstV] file.cdb *OR* -q file.cdb key [record#]\n\
 Program: Constant Database Driver (clone of https://cr.yp.to/cdb.html)\n\

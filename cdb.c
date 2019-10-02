@@ -605,8 +605,11 @@ static int cdb_hash_grow(cdb_t *cdb, const cdb_word_t hash, const cdb_word_t pos
 	assert(cdb);
 	cdb_hash_table_t *t1 = &cdb->table1[hash % BUCKETS];
 	cdb_word_t *hashes = cdb_reallocate(cdb, t1->hashes, (t1->header.length + 1ul) * sizeof (*t1->hashes));
+	if (!hash)
+		return CDB_ERROR_E;
+	t1->hashes = hashes;
 	cdb_word_t *fps    = cdb_reallocate(cdb, t1->fps,    (t1->header.length + 1ul) * sizeof (*t1->fps));
-	if (!hashes || !fps) { // BUG!
+	if (!fps) {
 		(void)cdb_hash_free(cdb, t1);
 		return CDB_ERROR_E;
 	}

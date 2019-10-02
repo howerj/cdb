@@ -304,8 +304,9 @@ reads or seeks. The only valid thing to do on a database that has returned a
 negative number is to called 'cdb\_close' and never use the handle again.
 
 As there are potentially duplicate keys, the function 'cdb\_get\_count' can be
-used to query for duplicates. It returns the number of records that are in the
-database for a given key.
+used to query for duplicates. It sets the parameter count to the number of
+records found for that key (and it sets count to zero, and returns zero, if no
+keys are found, it returns one if one or more keys were found).
 
 There are several things that could be done to speed up the database but this
 would complicate the implementation and the API.
@@ -371,7 +372,7 @@ probably will not be, or can be implemented on top of the program anyway.
 - Instead of having two separate structures for the allocator and the file
   operations, the structure could be merged.
 
-# BUGS
+# BUGS / TODO
 
 For any bugs, email the [author][]. It comes with a 'works on my machine
 guarantee'. The code has been written with the intention of being portable, and
@@ -380,20 +381,18 @@ should work on 32-bit and 64-bit machines. It is tested more frequently on a
 detailed bug report (including but not limited to what machine/OS you are 
 running on, compiler, compiler version, a failing example test case, etcetera).
 
-- [ ] Improve code quality
-  - [ ] Stress test (attempt creation >4GiB DBs, overflow conditions, etcetera)
-  - [ ] Use less memory when holding index in memory
-  - [ ] Use a fuzzer (like American Fuzzy Lop) to find faults
-- [ ] Allow compile time customization of library
-  - [ ] allow run time configuration of 16/32/64 bit versions?
-  - [ ] allow code to be compiled out to save size
+- [ ] Use less memory when holding index in memory
+- [ ] Use a fuzzer (like [American Fuzzy Lop][]) to find faults
+- [ ] Allow CDB size (16 bit, 32 bit [default] and 64 bit) to be configured
 - [ ] Split out the callbacks in [main.c][] into a file called 'hosted.c' so
   the callbacks can be reused.
-- [ ] Benchmark the system.
-  - [ ] Adding timing information to operations.
-  - [ ] Possible improvements include larger I/O buffering and avoiding
-    scanf/printf functions (using custom numeric routines instead).
-  - [ ] Different hash functions could improve performance
+
+The system could be benchmarked by:
+
+- [ ] Adding timing information to operations.
+- [ ] Possible improvements include larger I/O buffering and avoiding
+scanf/printf functions (using custom numeric routines instead).
+- [ ] Different hash functions could improve performance
 
 # COPYRIGHT
 
@@ -418,3 +417,4 @@ The libraries, documentation, and the program at licensed under the
 [git]: https://git-scm.com/
 [REPL]: https://en.wikipedia.org/wiki/Read%E2%80%93eval%E2%80%93print_loop
 [markdown]: https://daringfireball.net/projects/markdown/
+[American Fuzzy Lop]: http://lcamtuf.coredump.cx/afl/
