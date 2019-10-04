@@ -5,7 +5,7 @@
 #	-Wnull-dereference -Wjump-misses-init \
 #	-Wshadow 
 
-VERSION=0x010002ul
+VERSION=0x010100ul
 CFLAGS=-Wall -Wextra -fPIC -std=c99 -O2 -pedantic -g -fwrapv ${DEFINES} ${EXTRA} -DCDB_VERSION="${VERSION}"
 TARGET=cdb
 AR      = ar
@@ -59,14 +59,14 @@ clean:
 	git clean -dfx
 
 cdb64: DEFINES=-DCDB_SIZE=64
-cdb64: clean ${TARGET}
-	mv ${TARGET} $@
+cdb64: main.c ${TARGET}.c ${TARGET}.h
+	${CC} ${CFLAGS} $^ -o $@
 
 cdb32: DEFINES=-DCDB_SIZE=32
-cdb32: clean ${TARGET}
-	mv ${TARGET} $@
+cdb32: main.c ${TARGET}.c ${TARGET}.h
+	${CC} ${CFLAGS} $^ -o $@
 
 cdb16: DEFINES=-DCDB_SIZE=16
-cdb16: clean ${TARGET}
-	mv ${TARGET} $@
+cdb16: main.c ${TARGET}.c ${TARGET}.h
+	${CC} ${CFLAGS} $^ -o $@
 

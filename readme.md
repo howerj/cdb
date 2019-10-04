@@ -24,7 +24,7 @@ cdb -q file.cdb key \[record#\]
 A clone of the [CDB][] database, a simple, read-only (once created) database.
 The database library is designed so it can be embedded into a microcontroller 
 if needed. This program can be used for creating and querying CDB databases,
-which are key-value pairs of binary data.
+which consist of key-value pairs of binary data.
 
 # OPTIONS
 
@@ -89,6 +89,17 @@ A database dump can be read straight back in to create another database:
 
 cdb returns zero on success/key found, and a non zero value on failure. Two is
 returned if a key is not found.
+
+# LIMITATIONS
+
+Three different versions of the library can be built; a 16, a 32 and a 64 bit
+version. The 32 bit version is the default version. For all versions there is a
+limit on the maximum file size in the format used of 2^N, where N is the size.
+Keys and Values have the same limit (although they can never reach that size as
+some of the overhead is taken up as part of the file format). Any other
+arbitrary limitation is a bug in the implementation.
+
+The minimum size of a CDB file is 256 \* 2 \* (N/8) bytes.
 
 # INPUT/DUMP FORMAT
 
@@ -179,7 +190,16 @@ modification that an exclusive or replaces an addition. The algorithm calculates
 hashes of the size of a word, the initial hash value is the special number '5381'. 
 The hash is calculated as the current hash value multiplied by 33, to which the 
 new byte to be hashes and the result of multiplication under go an exclusive or 
-operation. This repeats until all bytes to be hashed are processed.
+operation. This repeats until all bytes to be hashed are processed. All
+arithmetic operations are unsigned and performed modulo 2 raised to the power
+of 32.
+
+The pseudo code for this is:
+
+	set HASH to 5381
+	for each OCTET in INPUT:
+		set HASH to: ((HASH * 33) % pow(2, 32)) xor OCTET
+	return HASH
 
 Note that there is nothing in the file format that disallows duplicate keys in
 the database, in fact the API allows duplicate keys to be retrieved. Both key
@@ -192,6 +212,8 @@ available here <http://www.unixuser.org/~euske/doc/cdbinternals/> and the
 script itself is available at the bottom of that page
 <http://www.unixuser.org/~euske/doc/cdbinternals/pycdb.py>.
 
+A visualization of the overall file structure:
+
 	         Constant Database Sections
 	.-------------------------------------------.
 	|   256 Bucket Initial Hash Table (2KiB)    |
@@ -200,6 +222,8 @@ script itself is available at the bottom of that page
 	.-------------------------------------------.
 	|       0-256 Secondary Hash Tables         |
 	.-------------------------------------------.
+
+The initial hash table at the start of the file:
 
 	    256 Bucket Initial Hash Table (2KiB)
 	.-------------------------------------------.
@@ -210,6 +234,8 @@ script itself is available at the bottom of that page
 	P = Position of secondary hash table
 	L = Number of buckets in secondary hash table
 
+The key-value pairs:
+
 	.-------------------------------------------.
 	| { KL, VL } | KEY ...      | VALUE ...     |
 	.-------------------------------------------.
@@ -217,6 +243,9 @@ script itself is available at the bottom of that page
 	VL    = Value Length
 	KEY   = Varible length binary data key
 	VALUE = Variable length binary value
+
+Of the variable number of hash tables (which each are of a variable length) at
+the end of the file:
 
 	 0-256 Variable Length Secondary Hash Tables
 	.---------------------.
@@ -228,6 +257,8 @@ script itself is available at the bottom of that page
 	.--------------------------------.
 	H = Hash
 	P = Position of Key-Value Pair
+
+And that is all for the file format description.
 
 # CDB C API
 
@@ -300,13 +331,27 @@ handle may be pointing to a different area in the database.
 
 If a read or a seek is issued that goes outside of the bounds of the database
 then all subsequent database operations on that handle will fail, not just
-reads or seeks. The only valid thing to do on a database that has returned a
-negative number is to called 'cdb\_close' and never use the handle again.
+reads or seeks. The only valid things to do on a database that has returned a
+negative number is to call 'cdb\_get\_error' and then 'cdb\_close' and never 
+use the handle again. 'cdb\_get\_error' must noe be used on a closed handle.
 
 As there are potentially duplicate keys, the function 'cdb\_get\_count' can be
 used to query for duplicates. It sets the parameter count to the number of
 records found for that key (and it sets count to zero, and returns zero, if no
 keys are found, it returns one if one or more keys were found).
+
+The function 'cdb\_get\_error' can be used to query what error has occurred, if
+any. On an error a negative value is returned, the meaning of this value is
+deliberately not included in the header as the errors recorded and their
+meaning of their values may change. Use the source for the library to determine
+what error occurred.
+
+The function 'cdb\_version' returns the version number and information about 
+the compile time options selected when the library was built. A 
+[Semantic Version Number][] is used, which takes the form "MAJOR.MINOR.PATCH".
+The PATCH number is stored in the Least Significant Byte, the MINOR number the
+next byte up, and the MAJOR in the third byte. The fourth byte contains the 
+compile time options.
 
 There are several things that could be done to speed up the database but this
 would complicate the implementation and the API.
@@ -314,8 +359,8 @@ would complicate the implementation and the API.
 # BUILD REQUIREMENTS
 
 If you are building the program from the repository at
-<https://github.com/howerj/cdb> you will need [GNU Make][] and a [C
-Compiler][]. The library is written in pure [C99][] and should be fairly simple
+<https://github.com/howerj/cdb> you will need [GNU Make][] and a [C Compiler][]. 
+The library is written in pure [C99][] and should be fairly simple
 to port to another platform. Other [Make][] implementations may work, however
 they have not been tested. [git][] is also used as part of the build system.
 
@@ -336,43 +381,26 @@ will not actually install anything. Changing 'DESTDIR' to '/usr' should install
 everything properly. [pandoc][] is required to build the manual page for
 installation, which is generated from this [markdown][] file.
 
+Look at the source file [cdb.c][] to see what compile time options can be
+passed to the compiler to enable and disable features (if code size is a
+concern then the ability to create databases can be removed, for example).
+
 # POSSIBLE DIRECTIONS
 
-The wish list contains a list of ideas that may be cool to implemented, but
-probably will not be, or can be implemented on top of the program anyway.
+There are many additions that could be made to a project, however the
+code is quite compact and neat, anything else that is needed could be built
+on top of this library. Some ideas for improvement include; adding a header
+along with a [CRC][], adding (unsafe) functions for rewriting key-values,
+adding (de)compression (with the [shrink][] library) and decryption,
+integrating the project in an embedded system in conjunction with [littlefs][]
+as an example, allowing the user to supply their own comparison and hash
+functions, adding types and schemas to the database, and more. 
 
-- Adding a header along with a [CRC][] for error detection, lessons learned
-  from other file formats can be incorporated, some guides are available at:
-  - <https://softwareengineering.stackexchange.com/questions/171201>
-  - <https://stackoverflow.com/questions/323604>
-  - And the PNG Specification: <https://www.w3.org/TR/PNG/>
-  This would make the format incompatible with other programs that
-  manipulate the CDB file format however. But would allow the shrinking
-  of empty CDB databases, and to encode information about pointer sizes and
-  the like. There is scope for adding a header in the key-value section after
-  the first 2KiB Initial Hash Table. A key-value pair that is not referenced
-  by any of the tables could be used to store CRC information, and other data.
-  Some CDB implementations may be able to detect this however, and report an
-  invalid file. The header would need to be 4KiB in if 32 and 64 bit versions
-  of this library were to be supported simultaneously.
-- (De)Compression could be added with the [shrink][] library, making the
-  database smaller.
-- Various schemas, type information, and a query language could be built upon
-  this library.
-- The user could supply their own hash and compare functions if fuzzy matching
-  over the database is wanted, however they may have to force values into
-  specific buckets to support this.
-- Integrate with utilities like [littlefs][] or other embedded file systems.
-- A few functions could be added to allow the database to be updated after it
-  has been created, obviously this would be fraught with danger, but it is
-  possible to extend the database after creation despite the name. Interfaces
-  for adding new keys and replacing keys would be fairly easy, and in place
-  key deletion and recompacting the database would be more difficult. File
-  locking callbacks could be provided for if these were to be added.
-- Instead of having two separate structures for the allocator and the file
-  operations, the structure could be merged.
+All of these would add complexity, and more code - making it more useful 
+to some and less to others. As such, apart from bugs, the library and test 
+driver programs should be considered complete.
 
-# BUGS / TODO
+# BUGS
 
 For any bugs, email the [author][]. It comes with a 'works on my machine
 guarantee'. The code has been written with the intention of being portable, and
@@ -381,26 +409,14 @@ should work on 32-bit and 64-bit machines. It is tested more frequently on a
 detailed bug report (including but not limited to what machine/OS you are 
 running on, compiler, compiler version, a failing example test case, etcetera).
 
-- [ ] Use less memory when holding index in memory
-- [ ] Use a fuzzer (like [American Fuzzy Lop][]) to find faults
-- [ ] Allow CDB size (16 bit, 32 bit [default] and 64 bit) to be configured
-- [ ] Split out the callbacks in [main.c][] into a file called 'hosted.c' so
-  the callbacks can be reused.
-
-The system could be benchmarked by:
-
-- [ ] Adding timing information to operations.
-- [ ] Possible improvements include larger I/O buffering and avoiding
-scanf/printf functions (using custom numeric routines instead).
-- [ ] Different hash functions could improve performance
-
 # COPYRIGHT
 
-The libraries, documentation, and the program at licensed under the 
-[Unlicense][]. Do what thou wilt.
+The libraries, documentation, and the test driver program are licensed under 
+the [Unlicense][]. Do what thou wilt.
 
 [author]: howe.r.j.89@gmail.com
 [main.c]: main.c
+[cdb.c]: cdb.c
 [CDB]: https://cr.yp.to/cdb.html
 [GNU Make]: https://www.gnu.org/software/make/
 [C Compiler]: https://gcc.gnu.org/
@@ -418,3 +434,4 @@ The libraries, documentation, and the program at licensed under the
 [REPL]: https://en.wikipedia.org/wiki/Read%E2%80%93eval%E2%80%93print_loop
 [markdown]: https://daringfireball.net/projects/markdown/
 [American Fuzzy Lop]: http://lcamtuf.coredump.cx/afl/
+[Semantic Version Number]: https://semver.org/

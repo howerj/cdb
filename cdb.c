@@ -10,8 +10,12 @@
 #include <string.h>
 #include <limits.h>
 
+#ifndef CDB_SIZE
+#define CDB_SIZE (32ul)
+#endif
+
 #ifndef CDB_VERSION
-#define CDB_VERSION (((unsigned long)CDB_SIZE << 24) | 0x000000ul)
+#define CDB_VERSION (0x000000ul) /* all zeros = built incorrectly */
 #endif
 
 #ifndef CDB_TESTS_ON
@@ -22,15 +26,16 @@
 #define CDB_WRITE_ON (1)
 #endif
 
-#ifndef MEMORY_INDEX /* use in memory hash table if '1' for first table */
-#define MEMORY_INDEX (0)
+#ifndef CDB_MEMORY_INDEX_ON /* use in memory hash table if '1' for first table */
+#define CDB_MEMORY_INDEX_ON (0)
 #endif
 
 #define BUILD_BUG_ON(condition)   ((void)sizeof(char[1 - 2*!!(condition)]))
 #define implies(P, Q)             assert(!(P) || (Q))
 #define MIN(X, Y)                 ((X) < (Y) ? (X) : (Y))
 #define FILE_START                (0ul)
-#define BUCKETS                   (256ul)
+#define NBUCKETS                  (8ul)
+#define BUCKETS                   (1ul << NBUCKETS)
 #define READ_BUFFER_LENGTH        (256ul)
 
 enum {
@@ -77,8 +82,26 @@ struct cdb { /* constant database handle: for all your querying needs! */
 	cdb_hash_table_t table1[]; /* only allocated if in create mode, BUCKETS elements are allocated */
 };
 
-unsigned long cdb_version(void) {
-	return CDB_VERSION;
+/* To make the library easier to use we could provide a set of default 
+ * allocators (that when compiled out always return an error), the non-thread
+ * safe allocator would return a pointer to a statically declared variable and
+ * mark it as being used. */
+
+unsigned long cdb_version(void) { /* should've been called 'cdb_get_version'...*/
+	BUILD_BUG_ON(CDB_SIZE != 16 && CDB_SIZE != 32 && CDB_SIZE != 64);
+	BUILD_BUG_ON((sizeof (cdb_word_t) * CHAR_BIT) != CDB_SIZE);
+	unsigned long spec = CDB_SIZE >> 4; /* Lowest three bits = size */
+	spec |= CDB_TESTS_ON        << 4;
+	spec |= CDB_WRITE_ON        << 5;
+	spec |= CDB_MEMORY_INDEX_ON << 6;
+	return (spec << 24) | CDB_VERSION;
+}
+
+/* A function for resolving an error code into a (constant and static) string
+ * would help, but is not needed. It is just more bloat. */
+int cdb_get_error(cdb_t *cdb) {
+	assert(cdb);
+	return cdb->error;
 }
 
 /* This is not 'djb2' hash - the character is xor'ed in and not added. */
@@ -282,9 +305,9 @@ static int cdb_finalize(cdb_t *cdb) {
 		for (size_t j = 0; j < t->header.length; j++) {
 			const cdb_word_t h = t->hashes[j];
 			const cdb_word_t p = t->fps[j];
-			const cdb_word_t start = (h >> 8) % length;
+			const cdb_word_t start = (h >> NBUCKETS) % length;
 			cdb_word_t k = 0;
-			for (k = start; positions[k]; k = (k + 1) % length)
+			for (k = start; positions[k]; k = (k + 1ul) % length)
 				;
 			hashes[k]    = h;
 			positions[k] = p;
@@ -330,6 +353,11 @@ fail:
 }
 
 int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator, const int create, const char *file) {
+	/* We could allow the word size of the CDB database {16, 32 (default) or 64}
+	 * to be configured at run time and not compile time, this has API related
+	 * consequences, the size of 'cdb_word_t' would determine maximum size that
+	 * could be supported by this library. 'cdb_open' would have to take another
+	 * parameter or one of the structures passed in would need to be extended. */
 	assert(cdb);
 	assert(ops);
 	assert(ops->read);
@@ -345,7 +373,7 @@ int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator,
 	if (create && CDB_WRITE_ON == 0)
 		return CDB_ERROR_E;
 	cdb_t *c = NULL;
-	const int large = MEMORY_INDEX || create;
+	const int large = CDB_MEMORY_INDEX_ON || create;
 	const size_t csz = (sizeof *c) + (large * sizeof c->table1[0] * BUCKETS);
 	c = allocator->malloc(allocator->arena, csz);
 	if (!c)
@@ -367,10 +395,9 @@ int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator,
 			if (cdb_write_word_pair(c, 0, 0) < 0)
 				goto fail;
 	} else {
-		/* TODO: We allocate more memory than we need if MEMORY_INDEX is
+		/* We allocate more memory than we need if CDB_MEMORY_INDEX_ON is
 		 * true as 'cdb_hash_table_t' contains entries needed for
-		 * creation that we do not need when reading the database. This
-		 * should be fixed. */
+		 * creation that we do not need when reading the database. */
 		cdb_word_t hpos = 0, hlen = 0, lpos = -1l, lset = 0, prev = 0, pnum = 0;
 		for (size_t i = 0; i < BUCKETS; i++) {
 			cdb_hash_table_t t = { .header = { .position = 0, .length = 0 } };
@@ -380,7 +407,7 @@ int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator,
 				goto fail;
 			prev = t.header.position;
 			pnum = t.header.length;
-			if (MEMORY_INDEX)
+			if (CDB_MEMORY_INDEX_ON)
 				c->table1[i] = t;
 			if (t.header.length)
 				c->empty = 0;
@@ -436,7 +463,9 @@ static int cdb_compare(cdb_t *cdb, const cdb_buffer_t *k1, const cdb_file_pos_t 
 	return CDB_FOUND_E; /* equal */
 }
 
-/* returns: -1 = error, 0 = not found, 1 = found */
+/* The library should undergo bench marking (comparing it to similar implementations
+ * of the CDB specification) and also fuzzing. "American Fuzzy Lop" could be used 
+ * to fuzz the library for problems. */
 static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, long *record) {
 	assert(cdb);
 	assert(cdb->opened);
@@ -456,7 +485,7 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 	const cdb_word_t h = djb_hash((uint8_t *)(key->buffer), key->length);
 	cdb_word_t pos = 0, num = 0;
 
-	if (MEMORY_INDEX) { /* use more memory (4KiB) to speed up first match */
+	if (CDB_MEMORY_INDEX_ON) { /* use more memory (~4KiB) to speed up first match */
 		cdb_hash_table_t *t = &cdb->table1[h % BUCKETS];
 		pos = t->header.position;
 		num = t->header.length;
@@ -470,7 +499,7 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 		return cdb_status(cdb) < 0 ? CDB_ERROR_E : CDB_NOT_FOUND_E; 
 	if (cdb_bound(cdb, pos > cdb->file_end || pos < cdb->hash_start) < 0)
 		goto fail;
-	const cdb_word_t start = (h >> 8) % num;
+	const cdb_word_t start = (h >> NBUCKETS) % num;
 	for (cdb_word_t i = 0; i < num; i++) {
 		const cdb_word_t seekpos = pos + (((start + i) % num) * (2ul * sizeof(cdb_word_t)));
 		if (seekpos < pos || seekpos > cdb->file_end)
@@ -547,7 +576,7 @@ int cdb_get_count(cdb_t *cdb, const cdb_buffer_t *key, long *count) {
 	cdb_file_pos_t value = { 0, 0 };
 	long c = LONG_MAX;
 	const int r = cdb_retrieve(cdb, key, &value, &c);
-	c = r == CDB_FOUND_E ? c + 1 : c;
+	c = r == CDB_FOUND_E ? c + 1l : c;
 	*count = c;
 	return r;
 }

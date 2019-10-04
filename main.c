@@ -340,9 +340,9 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 		}
 
 		collisions += num > 2ul;
-		entries += num;
-		occupied += num != 0;
-		hmax = MAX(num, hmax);
+		entries    += num;
+		occupied   += num != 0;
+		hmax        = MAX(num, hmax);
 		if (num)
 			hmin = MIN(num, hmin);
 		if (cdb_seek(cdb, pos, CDB_SEEK_START) < 0)
@@ -508,19 +508,14 @@ static int cdb_query(cdb_t *cdb, char *key, int record, FILE *output) {
 	assert(cdb);
 	assert(key);
 	assert(output);
-	int r = 0;
 	const cdb_buffer_t kb = { .length = strlen(key), .buffer = key };
 	cdb_file_pos_t vp = { 0, 0 };
 	const int gr = cdb_get_record(cdb, &kb, &vp, record);
-	if (gr < 0) {
-		r = -1;
-	} else {
-		if (gr > 0)
-			r = cdb_print(cdb, &vp, output);
-		else
-			r = 2; /* not found */
-	}
-	return r;
+	if (gr < 0)
+		return -1;
+	if (gr > 0) /* found */
+		return cdb_print(cdb, &vp, output) < 0 ? -1 : 0;
+	return 2; /* not found */
 }
 
 static int cdb_null_cb(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param) {
@@ -540,6 +535,7 @@ static int help(FILE *output, const char *arg0) {
 	assert(output);
 	assert(arg0);
 	unsigned long version = cdb_version();
+	unsigned q = (version >> 24) & 0xff;
 	unsigned x = (version >> 16) & 0xff;
 	unsigned y = (version >>  8) & 0xff;
 	unsigned z = (version >>  0) & 0xff;
@@ -551,9 +547,10 @@ Email:   howe.r.j.89@gmail.com\n\
 Repo:    https://github.com/howerj/cdb\n\
 License: The Unlicense\n\
 Version: %u.%u.%u\n\
+Options: 0x%x\n\
 Size:    %d\n\
 Notes:   See manual pages or project website for more information.\n\n";
-	return fprintf(output, usage, arg0, x, y, z, (int)(sizeof (cdb_word_t) * CHAR_BIT));
+	return fprintf(output, usage, arg0, x, y, z, q,(int)(sizeof (cdb_word_t) * CHAR_BIT));
 }
 
 int main(int argc, char **argv) {
@@ -587,14 +584,14 @@ int main(int argc, char **argv) {
 		switch (ch) {
 		case 'h': return help(stdout, argv[0]), 0;
 		case 't': return -cdb_tests(&ops, &allocator, opt.arg);
-		case 'r': file = opt.arg; mode = READ;   break;
+		case 'r': file = opt.arg; mode = READ;     break;
 		case 'c': file = opt.arg; mode = CREATE;   break;
 		case 'd': file = opt.arg; mode = DUMP;     break;
 		case 'k': file = opt.arg; mode = KEYS;     break;
 		case 's': file = opt.arg; mode = STATS;    break;
 		case 'q': file = opt.arg; mode = QUERY;    break;
 		case 'V': file = opt.arg; mode = VALIDATE; break;
-		case 'p': prompt = opt.arg; break;
+		case 'p': prompt = opt.arg;                break;
 		default: help(stderr, argv[0]); return 1;
 		}
 	}

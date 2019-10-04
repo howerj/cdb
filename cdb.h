@@ -62,7 +62,7 @@ typedef struct {
 
 typedef int (*cdb_callback)(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param);
 
-CDB_API unsigned long cdb_version(void); /* returns: version number in x.y.z format, top most bit is size */
+CDB_API unsigned long cdb_version(void); /* returns: version number in x.y.z format, x = LSB, top most byte is library info */
 /* returns: number of characters read in, zero on error or length == 0 */
 CDB_API cdb_word_t cdb_read(cdb_t *cdb, void *buf, cdb_word_t length);
 
@@ -72,6 +72,7 @@ CDB_API int cdb_close(cdb_t *cdb);  /* free cdb, close (and write to disk if in 
 CDB_API int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value);
 CDB_API int cdb_get_record(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, long record);
 CDB_API int cdb_get_count(cdb_t *cdb, const cdb_buffer_t *key, long *count);
+CDB_API int cdb_get_error(cdb_t *cdb);
 CDB_API int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param);
 CDB_API int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value);
 CDB_API int cdb_seek(cdb_t *cdb, cdb_word_t position, int whence);
