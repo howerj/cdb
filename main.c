@@ -18,6 +18,7 @@
 #define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
 #define MAX(X, Y) ((X) > (Y) ? (X) : (Y))
 #define IO_BUFFER_SIZE (4096)
+#define DISTMAX (10)
 
 #ifdef _WIN32 /* Used to unfuck file mode for "Win"dows. Text mode is for losers. */
 #include <windows.h>
@@ -302,8 +303,6 @@ static int cdb_stats(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t
 	cs->max_value_length    = MAX(cs->max_value_length, value->length);
 	return 0;
 }
-
-#define DISTMAX (10)
 
 static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 	assert(cdb);
@@ -601,8 +600,11 @@ int main(int argc, char **argv) {
 
 	cdb_t *cdb = NULL;
 	errno = 0;
-	if (cdb_open(&cdb, &ops, &allocator, mode == CREATE, file) < 0)
-		die("opening file '%s' in %s mode failed: %s", file, mode == CREATE ? "create" : "read", strerror(errno));
+	if (cdb_open(&cdb, &ops, &allocator, mode == CREATE, file) < 0) {
+		const char *stre = strerror(errno);
+		const char *mstr = mode == CREATE ? "create" : "read";
+		die("opening file '%s' in %s mode failed: %s", file, mstr, stre);
+	}
 
 	int r = 0;
 	switch (mode) {
@@ -623,8 +625,10 @@ int main(int argc, char **argv) {
 		die("unimplemented mode: %d", mode);
 	}
 
+	const int cdbe = cdb_get_error(cdb);
 	if (cdb_close(cdb) < 0)
 		die("Close/Finalize failed");
-
+	if (cdbe < 0)
+		die("CDB internal error: %d", cdbe);
 	return r;
 }

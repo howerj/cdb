@@ -63,8 +63,8 @@ typedef struct {
 typedef int (*cdb_callback)(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param);
 
 CDB_API unsigned long cdb_version(void); /* returns: version number in x.y.z format, x = LSB, top most byte is library info */
-/* returns: number of characters read in, zero on error or length == 0 */
-CDB_API cdb_word_t cdb_read(cdb_t *cdb, void *buf, cdb_word_t length);
+CDB_API uint32_t cdb_hash(void *data, size_t length);
+CDB_API cdb_word_t cdb_read(cdb_t *cdb, void *buf, cdb_word_t length); /* returns: number of chars read / zero on error or length == 0 */
 
 /* All functions return: < 0 on failure, 0 on success/not found, 1 on found */
 CDB_API int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator, int create, const char *file);
