@@ -5,7 +5,7 @@
 #	-Wnull-dereference -Wjump-misses-init \
 #	-Wshadow 
 
-VERSION=0x010200ul
+VERSION=0x010201ul
 CFLAGS=-Wall -Wextra -fPIC -std=c99 -O2 -pedantic -g -fwrapv ${DEFINES} ${EXTRA} -DCDB_VERSION="${VERSION}"
 TARGET=cdb
 AR      = ar

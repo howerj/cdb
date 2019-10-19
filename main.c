@@ -494,7 +494,7 @@ static int cdb_query_prompt(cdb_t *cdb, FILE *input, FILE *output, const char *p
 		continue;
 	prompt:
 		if (cdb_prompt(output, prompt) < 0)
-			return -1;
+			goto fail;
 	}
 fail:
 	r = -1;
