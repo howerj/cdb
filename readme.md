@@ -88,7 +88,8 @@ A database dump can be read straight back in to create another database:
 # RETURN VALUE
 
 cdb returns zero on success/key found, and a non zero value on failure. Two is
-returned if a key is not found.
+returned if a key is not found, any other value indicates are more serious
+failure.
 
 # LIMITATIONS
 
@@ -127,7 +128,7 @@ several commands that can be issued. These are:
 	s - print statistics about the open database
 	k - print all keys in the database
 	d - dump the entire database out
-	+ - retrieve a single from the database if it exists
+	+ - retrieve a single item from the database if it exists
 
 The '+' option takes the format:
 
@@ -150,7 +151,7 @@ startup.
 # FILE FORMAT
 
 The file format is incredibly simple, it is designed so that only the header
-and the hash table index needs to be stored in memory during generation of the
+and the hash table pointer need to be stored in memory during generation of the
 table - the keys and values can be streamed on to the disk. The header consists
 of 256 2-word values forming an initial hash table that point to the hash
 tables at the end of the file, the key-value records, and then up to 256 hash 
@@ -160,7 +161,7 @@ A word consists of a 4-byte/32-bit value (although this may be changed via
 compile time options, creating an incompatible format). All word values are
 stored in little-endian format.
 
-The initial hash table contains an array of 256 2-word values, as mentioned.
+The initial hash table contains an array of 256 2-word values.
 The words are; a position of a hash table in the file and the number of buckets
 in that hash table, stored in that order. To lookup a key the key is first
 hashed, the lowest eight bits of the hash are used to index into the initial table 
@@ -264,20 +265,21 @@ And that is all for the file format description.
 
 There are a few goals that the API has:
 
-* It is simple, there should be few functions and data structures.
-* The API is fairly easy to use.
+* Simplicity, there should be few functions and data structures.
+* The API is easy to use.
 * There should be minimal dependencies on the C standard library. The
   library itself should be small and not be a huge, non-portable, "optimized",
   mess.
 * The user should decide when, where and how allocations are performed. The
-  working set should be small.
-* The database driver should be somewhat tolerant to erroneous files.
+  working set that is allocated should be small.
+* The database driver should catch corrupt files if possible.
 
 Some of these goals are in conflict, being able to control allocations and
 having minimal dependencies allow the library to be used in an embedded system,
 however it means that in order to do very basic things the user has to
 provide a series of callbacks. The callbacks are simple to implement on a
-hosted system, examples are provided in [main.c][] in the project repository.
+hosted system, examples are provided in [main.c][] in the project repository,
+but this means the library is not just read to use.
 
 There are two sets of operations that most users will want to perform; creating
 a database and reading keys. After the callbacks have been provided, to create
@@ -307,7 +309,7 @@ creating a function to deal with this:
 
 Note that you *cannot* query for a key from a database opened up in create 
 mode and you *cannot* add a key-value pair to a database opened up in read
-mode.
+mode. The operations are mutually exclusive.
 
 To search for a key within the database, you open up a database connection in
 read mode (create = 0):
@@ -333,7 +335,7 @@ If a read or a seek is issued that goes outside of the bounds of the database
 then all subsequent database operations on that handle will fail, not just
 reads or seeks. The only valid things to do on a database that has returned a
 negative number is to call 'cdb\_get\_error' and then 'cdb\_close' and never 
-use the handle again. 'cdb\_get\_error' must noe be used on a closed handle.
+use the handle again. 'cdb\_get\_error' must not be used on a closed handle.
 
 As there are potentially duplicate keys, the function 'cdb\_get\_count' can be
 used to query for duplicates. It sets the parameter count to the number of
@@ -342,7 +344,7 @@ keys are found, it returns one if one or more keys were found).
 
 The function 'cdb\_get\_error' can be used to query what error has occurred, if
 any. On an error a negative value is returned, the meaning of this value is
-deliberately not included in the header as the errors recorded and their
+deliberately not included in the header as the errors recorded and the
 meaning of their values may change. Use the source for the library to determine
 what error occurred.
 

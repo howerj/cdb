@@ -59,7 +59,7 @@ enum {
 typedef struct {
 	cdb_word_t position; /* position on disk of this hash table, when known */
 	cdb_word_t length;   /* number of buckets in hash table */
-} cdb_hash_header_t;
+} cdb_hash_header_t; /* initial hash table structure */
 
 typedef struct {
 	cdb_word_t *hashes;       /* full key hashes */
@@ -116,8 +116,6 @@ static uint32_t djb_hash(uint8_t *s, const size_t length) {
 uint32_t cdb_hash(void *data, const size_t length) {
 	return djb_hash(data, length);
 }
-
-/* void *cdb_get_file(cdb_t *cdb) { assert(cdb); return cdb->file; } */
 
 static inline int cdb_status(cdb_t *cdb) {
 	assert(cdb);
@@ -196,28 +194,29 @@ static cdb_word_t cdb_write(cdb_t *cdb, void *buf, size_t length) {
 	return cdb->ops.write(cdb->file, buf, length);
 }
 
+static inline void cdb_pack(uint8_t b[/*static (sizeof (cdb_word_t))*/], cdb_word_t w) {
+	assert(b);
+	for (size_t i = 0; i < sizeof w; i++)
+		b[i] = (w >> (i * CHAR_BIT)) & 0xFFu;
+}
+
+static inline cdb_word_t cdb_unpack(uint8_t b[/*static (sizeof (cdb_word_t))*/]) {
+	assert(b);
+	cdb_word_t w = 0;
+	for (size_t i = 0; i < sizeof w; i++)
+		w |= ((cdb_word_t)b[i]) << (i * CHAR_BIT);
+	return w;
+}
+
 int cdb_read_word(cdb_t *cdb, cdb_word_t *word) {
 	assert(cdb);
 	assert(word);
-	uint8_t b[sizeof *word] = { 0 };
+	uint8_t b[sizeof *word];
 	*word = 0;
 	const long r = cdb_read(cdb, b, sizeof b);
 	if (r != sizeof b)
 		return -1;
-	cdb_word_t w = 0;
-	for (size_t i = 0; i < sizeof w; i++)
-		w |= ((cdb_word_t)b[i]) << (i * CHAR_BIT);
-	*word = w;
-	return 0;
-}
-
-static int cdb_write_word(cdb_t *cdb, const cdb_word_t word) {
-	assert(cdb);
-	uint8_t b[sizeof word] = { 0 };
-	for (size_t i = 0; i < sizeof b; i++)
-		b[i] = (word >> (i * CHAR_BIT)) & 0xFFu;
-	if (cdb_write(cdb, b, sizeof b) != sizeof b)
-		return -1;
+	*word = cdb_unpack(b);
 	return 0;
 }
 
@@ -225,16 +224,23 @@ int cdb_read_word_pair(cdb_t *cdb, cdb_word_t *w1, cdb_word_t *w2) {
 	assert(cdb);
 	assert(w1);
 	assert(w2);
-	if (cdb_read_word(cdb, w1) < 0)
-		return CDB_ERROR_E;
-	return cdb_read_word(cdb, w2);
+	uint8_t b[2ul * sizeof(cdb_word_t)];
+	const long r = cdb_read(cdb, b, sizeof b);
+	if (r != sizeof b)
+		return -1;
+	*w1 = cdb_unpack(b);
+	*w2 = cdb_unpack(b + sizeof(cdb_word_t));
+	return 0;
 }
 
-static inline int cdb_write_word_pair(cdb_t *cdb, const cdb_word_t w1, const cdb_word_t w2) {
+static int cdb_write_word_pair(cdb_t *cdb, const cdb_word_t w1, const cdb_word_t w2) {
 	assert(cdb);
-	if (cdb_write_word(cdb, w1) < 0)
+	uint8_t b[2ul * sizeof(cdb_word_t)];
+	cdb_pack(b, w1);
+	cdb_pack(b + sizeof(cdb_word_t), w2);
+	if (cdb_write(cdb, b, sizeof b) != sizeof b)
 		return -1;
-	return cdb_write_word(cdb, w2);
+	return 0;
 }
 
 static int cdb_hash_free(cdb_t *cdb, cdb_hash_table_t *t) {
@@ -264,7 +270,7 @@ static int cdb_free_resources(cdb_t *cdb) {
 	return r1 < 0 || r2 < 0 ? -1 : 0;
 }
 
-static int cdb_finalize(cdb_t *cdb) {
+static inline int cdb_finalize(cdb_t *cdb) { /* write hash tables to disk */
 	assert(cdb);
 	assert(cdb->error == 0);
 	assert(cdb->create == 1);
@@ -280,7 +286,7 @@ static int cdb_finalize(cdb_t *cdb) {
 		goto fail;
 	cdb->hash_start = cdb->position;
 
-	for (size_t i = 0; i < BUCKETS; i++) {
+	for (size_t i = 0; i < BUCKETS; i++) { /* write tables at end of file */
 		cdb_hash_table_t *t = &cdb->table1[i];
 		const cdb_word_t length = t->header.length * 2ul;
 		t->header.position = cdb->position; /* needs to be set */
@@ -326,8 +332,8 @@ static int cdb_finalize(cdb_t *cdb) {
 	cdb->file_end = cdb->position;
 	if (cdb_seek(cdb, cdb->file_start, CDB_SEEK_START) < 0)
 		goto fail;
-	for (size_t i = 0; i < BUCKETS; i++) {
-		cdb_hash_table_t *t = &cdb->table1[i];
+	for (size_t i = 0; i < BUCKETS; i++) { /* write initial hash table */
+		const cdb_hash_table_t * const t = &cdb->table1[i];
 		if (cdb_write_word_pair(cdb, t->header.position, (t->header.length * 2ul)) < 0)
 			goto fail;
 	}
@@ -448,16 +454,17 @@ static int cdb_compare(cdb_t *cdb, const cdb_buffer_t *k1, const cdb_file_pos_t 
 	assert(cdb);
 	assert(k1);
 	assert(k2);
-	/* Note that reading this buffer larger may not make things faster - if
-	 * most keys differ in the first few bytes then a small buffer means
-	 * less bytes moved around before the comparison. */
-	uint8_t kbuf[READ_BUFFER_LENGTH] = { 0 };
 	if (k1->length != k2->length)
 		return CDB_NOT_FOUND_E; /* not equal */
 	const cdb_word_t length = k1->length;
 	if (cdb_seek(cdb, k2->position, CDB_SEEK_START) < 0)
 		return CDB_ERROR_E;
-	for (cdb_word_t i = 0; i < length; i += sizeof kbuf) {
+	for (cdb_word_t i = 0; i < length; i += READ_BUFFER_LENGTH) {
+		/* Note that making this buffer larger may not make things faster - if
+		 * most keys differ in the first few bytes then a smaller buffer means
+		 * less bytes moved around before the comparison. */
+		uint8_t kbuf[READ_BUFFER_LENGTH];
+		BUILD_BUG_ON(sizeof kbuf != READ_BUFFER_LENGTH);
 		const cdb_word_t rl = MIN((cdb_word_t)sizeof kbuf, (cdb_word_t)length - i);
 		if (cdb_read(cdb, kbuf, rl) != rl)
 			return CDB_ERROR_E;
@@ -467,9 +474,6 @@ static int cdb_compare(cdb_t *cdb, const cdb_buffer_t *k1, const cdb_file_pos_t 
 	return CDB_FOUND_E; /* equal */
 }
 
-/* The library should undergo bench marking (comparing it to similar implementations
- * of the CDB specification) and also fuzzing. "American Fuzzy Lop" could be used 
- * to fuzz the library for problems. */
 static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, long *record) {
 	assert(cdb);
 	assert(cdb->opened);

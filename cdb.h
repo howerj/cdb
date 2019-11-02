@@ -43,7 +43,7 @@ typedef struct {
 
 typedef struct {
 	cdb_word_t (*read)(void *file, void *buf, size_t length);
-	cdb_word_t (*write)(void *file, void *buf, size_t length); /* (conditionally option) needed for creation only */
+	cdb_word_t (*write)(void *file, void *buf, size_t length); /* (conditionally optional) needed for creation only */
 	int (*seek)(void *file, long offset, long whence);
 	void *(*open)(const char *name, int mode);
 	int (*close)(void *file);
@@ -62,11 +62,11 @@ typedef struct {
 
 typedef int (*cdb_callback)(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param);
 
-CDB_API unsigned long cdb_version(void); /* returns: version number in x.y.z format, x = LSB, top most byte is library info */
+CDB_API unsigned long cdb_version(void); /* returns: version number in x.y.z format, z = LSB, MSB is library info */
 CDB_API uint32_t cdb_hash(void *data, size_t length);
 CDB_API cdb_word_t cdb_read(cdb_t *cdb, void *buf, cdb_word_t length); /* returns: number of chars read / zero on error or length == 0 */
 
-/* All functions return: < 0 on failure, 0 on success/not found, 1 on found */
+/* All functions return: < 0 on failure, 0 on success/not found, 1 on found if applicable */
 CDB_API int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator, int create, const char *file);
 CDB_API int cdb_close(cdb_t *cdb);  /* free cdb, close (and write to disk if in create mode) */
 CDB_API int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value);

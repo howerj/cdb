@@ -112,9 +112,9 @@ static void die(const char *fmt, ...) {
 	assert(fmt);
 	va_list arg;
 	va_start(arg, fmt);
-	vfprintf(stderr, fmt, arg);
+	(void)vfprintf(stderr, fmt, arg);
 	va_end(arg);
-	fputc('\n', stderr);
+	(void)fputc('\n', stderr);
 	exit(EXIT_FAILURE);
 }
 
@@ -357,7 +357,7 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 				h = 0;
 			} else {
 				h = h < i ? i - h : num - h + i;
-				h = MIN(h, DISTMAX - 1);
+				h = MIN(h, DISTMAX - 1ul);
 			}
 			distances[h]++;
 		}
