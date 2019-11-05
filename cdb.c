@@ -396,8 +396,10 @@ int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator,
 	*cdb          = c;
 	c->file       = c->ops.open(file, create ? CDB_RW_MODE : CDB_RO_MODE);
 	c->file_start = FILE_START;
-	if (!(c->file))
+	if (!(c->file)) {
+		(void)cdb_error(c, CDB_ERROR_OPEN_E);
 		goto fail;
+	}
 	if (cdb_seek(c, c->file_start, CDB_SEEK_START) < 0)
 		goto fail;
 	if (create) {
@@ -575,6 +577,10 @@ int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value) {
 	assert(value);
 	return cdb_get_record(cdb, key, value, 0l);
 }
+
+/* Missing from the API is a way of retrieving keys in a more efficient
+ * manner. Retrieving the Nth key means cycling through prior keys, by
+ * storing a little state in 'cdb_t' we could support this. */
 
 int cdb_get_count(cdb_t *cdb, const cdb_buffer_t *key, long *count) {
 	assert(cdb);

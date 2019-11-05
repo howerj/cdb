@@ -30,6 +30,8 @@ which consist of key-value pairs of binary data.
 
 **-h** : print out this help message and exit successfully
 
+**-v**: increase verbosity level
+
 **-t** *file.cdb* : run internal tests, exit with zero on a pass
 
 **-c**  *file.cdb* : run in create mode
@@ -40,6 +42,8 @@ which consist of key-value pairs of binary data.
 
 **-s**  *file.cdb* : print statistics about the database
 
+**-T** *temp.cdb* : name of temporary file to use
+
 **-V**  *file.cdb* : validate database
 
 **-r**  *file.cdb* : read keys in a read-query-print loop
@@ -47,6 +51,7 @@ which consist of key-value pairs of binary data.
 **-q**  *file.cdb key record-number* : query the database for a key, with an optional record
 
 **-p** prompt : set prompt for read mode
+
 
 # EXAMPLES
 
@@ -146,7 +151,23 @@ If the value was not found, or there was a format, a single '?' is printed.
 Helpful.
 
 Read mode has a prompt, which can be set or disabled with the **-p** option at
-startup.
+startup. Create mode currently does not have a prompt.
+
+The following [awk][] script can be used to pre-process a series of key-value
+pairs in the format "key value", with one record per line and optional comment
+lines:
+
+	#!/bin/sh
+	awk '
+	  /^[^#]/ {
+	    print "+" length($1) "," length($2) ":" $1 "->" $2
+	  }
+	  END {
+	    print ""
+	  }
+	' | cdb -c "$@"
+
+Which was available in the original [original cdb][] program as 'cdbmake-12'.
 
 # FILE FORMAT
 
@@ -437,3 +458,5 @@ the [Unlicense][]. Do what thou wilt.
 [markdown]: https://daringfireball.net/projects/markdown/
 [American Fuzzy Lop]: http://lcamtuf.coredump.cx/afl/
 [Semantic Version Number]: https://semver.org/
+[awk]: https://en.wikipedia.org/wiki/AWK
+[original cdb]: https://cr.yp.to/cdb.html

@@ -18,7 +18,7 @@ for CDB in cdb cdb16 cdb32 cdb64; do
 EOF
 	./${CDB} -t bist.cdb; 
 	./${CDB} -d bist.cdb | sort > bist.txt;
-	./${CDB} -c copy.cdb < bist.txt;
+	./${CDB} -c copy.cdb -T temp.cdb < bist.txt;
 	./${CDB} -d copy.cdb | sort > copy.txt;
 	diff -w bist.txt copy.txt;
 

@@ -14,11 +14,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define UNUSED(X) ((void)(X))
-#define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
-#define MAX(X, Y) ((X) > (Y) ? (X) : (Y))
-#define IO_BUFFER_SIZE (4096)
-#define DISTMAX (10)
+#ifndef USE_TMPNAM
+#define USE_TMPNAM (0)
+#endif
+
+#define UNUSED(X)      ((void)(X))
+#define MIN(X, Y)      ((X) < (Y) ? (X) : (Y))
+#define MAX(X, Y)      ((X) > (Y) ? (X) : (Y))
+#define IO_BUFFER_SIZE (1024u)
+#define DISTMAX        (10ul)
 
 #ifdef _WIN32 /* Used to unfuck file mode for "Win"dows. Text mode is for losers. */
 #include <windows.h>
@@ -45,7 +49,30 @@ typedef struct {
 	    reset;   /* set to reset */
 	char *place; /* internal use: scanner position */
 	int  init;   /* internal use: initialized or not */
-} cdb_getopt_t;   /* getopt clone; with a few modifications */
+} cdb_getopt_t;      /* getopt clone; with a few modifications */
+
+static unsigned verbose = 0;
+
+static void info(const char *fmt, ...) {
+	assert(fmt);
+	if (verbose == 0)
+		return;
+	va_list ap;
+	va_start(ap, fmt);
+	(void)vfprintf(stderr, fmt, ap);
+	va_end(ap);
+	(void)fputc('\n', stderr);
+}
+
+static void die(const char *fmt, ...) {
+	assert(fmt);
+	va_list ap;
+	va_start(ap, fmt);
+	(void)vfprintf(stderr, fmt, ap);
+	va_end(ap);
+	(void)fputc('\n', stderr);
+	exit(EXIT_FAILURE);
+}
 
 /* Adapted from: <https://stackoverflow.com/questions/10404448> */
 static int cdb_getopt(cdb_getopt_t *opt, const int argc, char *const argv[], const char *fmt) {
@@ -106,16 +133,6 @@ static int cdb_getopt(cdb_getopt_t *opt, const int argc, char *const argv[], con
 		opt->index++;
 	}
 	return opt->option; /* dump back option letter */
-}
-
-static void die(const char *fmt, ...) {
-	assert(fmt);
-	va_list arg;
-	va_start(arg, fmt);
-	(void)vfprintf(stderr, fmt, arg);
-	va_end(arg);
-	(void)fputc('\n', stderr);
-	exit(EXIT_FAILURE);
 }
 
 static cdb_word_t cdb_read_cb(void *file, void *buf, size_t length) {
@@ -394,7 +411,7 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 		return -1;
 	for (size_t i = 0; i < DISTMAX; i++) {
 		const double pct = s.records ? ((double)distances[i] / (double)s.records) * 100.0 : 0.0;
-		if (fprintf(output, "\td%u%s %4lu %5.2g%%\n", (unsigned)i, i == DISTMAX - 1 ? "+:" : ": ", distances[i], pct) < 0)
+		if (fprintf(output, "\td%u%s %4lu %5.2g%%\n", (unsigned)i, i == DISTMAX - 1ul ? "+:" : ": ", distances[i], pct) < 0)
 			return -1;
 	}
 	return 0;
@@ -539,23 +556,46 @@ static int help(FILE *output, const char *arg0) {
 	unsigned y = (version >>  8) & 0xff;
 	unsigned z = (version >>  0) & 0xff;
 	static const char *usage = "\
-Usage:   %s -h *OR* -[rcdkstV] file.cdb *OR* -q file.cdb key [record#]\n\
-Program: Constant Database Driver (clone of https://cr.yp.to/cdb.html)\n\
-Author:  Richard James Howe\n\
-Email:   howe.r.j.89@gmail.com\n\
-Repo:    https://github.com/howerj/cdb\n\
-License: The Unlicense\n\
-Version: %u.%u.%u\n\
-Options: 0x%x\n\
-Size:    %d\n\
-Notes:   See manual pages or project website for more information.\n\n";
+Usage   : %s -hv *OR* -[rcdkstVT] file.cdb *OR* -q file.cdb key [record#]\n\
+Program : Constant Database Driver (clone of https://cr.yp.to/cdb.html)\n\
+Author  : Richard James Howe\n\
+Email   : howe.r.j.89@gmail.com\n\
+Repo    : <https://github.com/howerj/cdb>\n\
+License : The Unlicense\n\
+Version : %u.%u.%u\n\
+Options : 0x%x\n\
+Size    : %d\n\
+Notes   : See manual pages or project website for more information.\n\n\
+Options :\n\n\
+\t-h          : print this help message and exit successfully\n\
+\t-v          : increase verbosity level\n\
+\t-r file.cdb : start query prompt\n\
+\t-c file.cdb : create a new database reading keys from stdin\n\
+\t-d file.cdb : dump entire database\n\
+\t-k file.cdb : dump all keys (there may be duplicates)\n\
+\t-s file.cdb : calculate database statistics\n\
+\t-t file.cdb : run internal tests generating a test file\n\
+\t-T temp.cdb : name of temporary file to use\n\
+\t-V file.cdb : validate database\n\
+\t-q file.cdb key #? : run query for key with optional record number\n\n\
+In create mode the key input format is:\n\n\
+\t+key-length,value-length:key->value\n\n\
+An example:\n\n\
+\t+5,5:hello->world\n\n\
+Queries are in a similar format:\n\n\
+\t+key-length:key\n\n\
+Binary key/values are allowed, as are duplicate and empty keys/values.\n\
+Returns values of 0 indicate success/found, 2 not found, and anything else\n\
+is an error.\n\
+";
 	return fprintf(output, usage, arg0, x, y, z, q,(int)(sizeof (cdb_word_t) * CHAR_BIT));
 }
 
 int main(int argc, char **argv) {
 	enum { READ, QUERY, DUMP, CREATE, STATS, KEYS, VALIDATE };
 	const char *file = NULL, *prompt = "> ";
-	int mode = READ;
+	char tname[L_tmpnam] = { 0 }, *tmp = NULL;
+	int mode = READ, creating = 0;
 
 	binary(stdin);
 	binary(stdout);
@@ -578,11 +618,11 @@ int main(int argc, char **argv) {
 	};
 
 	cdb_getopt_t opt = { .init = 0 };
-	int ch = 0;
-	while ((ch = cdb_getopt(&opt, argc, argv, "hr:t:c:d:k:s:q:V:p:")) != -1) {
+	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hvr:t:c:d:k:s:q:V:p:T:")) != -1; ) {
 		switch (ch) {
 		case 'h': return help(stdout, argv[0]), 0;
 		case 't': return -cdb_tests(&ops, &allocator, opt.arg);
+		case 'v': verbose++;                       break;
 		case 'r': file = opt.arg; mode = READ;     break;
 		case 'c': file = opt.arg; mode = CREATE;   break;
 		case 'd': file = opt.arg; mode = DUMP;     break;
@@ -591,6 +631,7 @@ int main(int argc, char **argv) {
 		case 'q': file = opt.arg; mode = QUERY;    break;
 		case 'V': file = opt.arg; mode = VALIDATE; break;
 		case 'p': prompt = opt.arg;                break;
+		case 'T': tmp = opt.arg;                   break;
 		default: help(stderr, argv[0]); return 1;
 		}
 	}
@@ -598,12 +639,25 @@ int main(int argc, char **argv) {
 	if (!file)
 		return help(stderr, argv[0]), 1;
 
+	creating = mode == CREATE;
+
+	if (USE_TMPNAM && creating && !tmp) {
+		errno = 0;
+		if (!tmpnam(tname))
+			die("temporary file name generation failed: %s", strerror(errno));
+		info("temporary file name: %s", tname);
+		tmp = tname;
+	}
+
 	cdb_t *cdb = NULL;
 	errno = 0;
-	if (cdb_open(&cdb, &ops, &allocator, mode == CREATE, file) < 0) {
+	const char *name = creating && tmp ? tmp : file;
+	info("opening '%s' for %s", name, creating ? "writing" : "reading");
+
+	if (cdb_open(&cdb, &ops, &allocator, creating, name) < 0) {
 		const char *stre = strerror(errno);
-		const char *mstr = mode == CREATE ? "create" : "read";
-		die("opening file '%s' in %s mode failed: %s", file, mstr, stre);
+		const char *mstr = creating ? "create" : "read";
+		die("opening file '%s' in %s mode failed: %s", name, mstr, stre);
 	}
 
 	int r = 0;
@@ -630,5 +684,12 @@ int main(int argc, char **argv) {
 		die("Close/Finalize failed");
 	if (cdbe < 0)
 		die("CDB internal error: %d", cdbe);
+
+	if (creating && tmp) {
+		info("renaming temporary file");
+		(void)remove(file);
+		if (rename(tmp, file) < 0)
+			die("rename from '%s' to '%s' failed: %s", tmp, file, strerror(errno));
+	}
 	return r;
 }
