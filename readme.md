@@ -22,7 +22,7 @@ cdb -q file.cdb key \[record#\]
 	Email:      howe.r.j.89@gmail.com
 
 A clone of the [CDB][] database, a simple, read-only (once created) database.
-The database library is designed so it can be embedded into a microcontroller 
+The database library is designed so it can be embedded into a microcontroller
 if needed. This program can be used for creating and querying CDB databases,
 which consist of key-value pairs of binary data.
 
@@ -119,7 +119,7 @@ a newline terminating the record, the format is:
 	+key-length,value-length:KEY->VALUE
 
 Despite the presence of textual data, the input key and value can contain
-binary data, including the ASCII NUL character. 
+binary data, including the ASCII NUL character.
 
 An example, encoding the key value pair "abc" to "def" and "G" to "hello":
 
@@ -175,7 +175,7 @@ The file format is incredibly simple, it is designed so that only the header
 and the hash table pointer need to be stored in memory during generation of the
 table - the keys and values can be streamed on to the disk. The header consists
 of 256 2-word values forming an initial hash table that point to the hash
-tables at the end of the file, the key-value records, and then up to 256 hash 
+tables at the end of the file, the key-value records, and then up to 256 hash
 tables pointing to the key-value pairs.
 
 A word consists of a 4-byte/32-bit value (although this may be changed via
@@ -185,7 +185,7 @@ stored in little-endian format.
 The initial hash table contains an array of 256 2-word values.
 The words are; a position of a hash table in the file and the number of buckets
 in that hash table, stored in that order. To lookup a key the key is first
-hashed, the lowest eight bits of the hash are used to index into the initial table 
+hashed, the lowest eight bits of the hash are used to index into the initial table
 and if there are values in this hash the search then proceeds to the second hash
 table at the end of the file.
 
@@ -208,10 +208,10 @@ A key-value pair is stored as two words containing the key length and the value
 length in that order, then the key, and finally the value.
 
 The hashing algorithm used is similar to [djb2][], but with a minor
-modification that an exclusive or replaces an addition. The algorithm calculates 
-hashes of the size of a word, the initial hash value is the special number '5381'. 
-The hash is calculated as the current hash value multiplied by 33, to which the 
-new byte to be hashes and the result of multiplication under go an exclusive or 
+modification that an exclusive or replaces an addition. The algorithm calculates
+hashes of the size of a word, the initial hash value is the special number '5381'.
+The hash is calculated as the current hash value multiplied by 33, to which the
+new byte to be hashes and the result of multiplication under go an exclusive or
 operation. This repeats until all bytes to be hashed are processed. All
 arithmetic operations are unsigned and performed modulo 2 raised to the power
 of 32.
@@ -328,7 +328,7 @@ creating a function to deal with this:
 		return cdb_add(cdb, &k, &v);
 	}
 
-Note that you *cannot* query for a key from a database opened up in create 
+Note that you *cannot* query for a key from a database opened up in create
 mode and you *cannot* add a key-value pair to a database opened up in read
 mode. The operations are mutually exclusive.
 
@@ -355,7 +355,7 @@ handle may be pointing to a different area in the database.
 If a read or a seek is issued that goes outside of the bounds of the database
 then all subsequent database operations on that handle will fail, not just
 reads or seeks. The only valid things to do on a database that has returned a
-negative number is to call 'cdb\_get\_error' and then 'cdb\_close' and never 
+negative number is to call 'cdb\_get\_error' and then 'cdb\_close' and never
 use the handle again. 'cdb\_get\_error' must not be used on a closed handle.
 
 As there are potentially duplicate keys, the function 'cdb\_get\_count' can be
@@ -369,11 +369,11 @@ deliberately not included in the header as the errors recorded and the
 meaning of their values may change. Use the source for the library to determine
 what error occurred.
 
-The function 'cdb\_version' returns the version number and information about 
-the compile time options selected when the library was built. A 
+The function 'cdb\_get\_version' returns the version number and information about
+the compile time options selected when the library was built. A
 [Semantic Version Number][] is used, which takes the form "MAJOR.MINOR.PATCH".
 The PATCH number is stored in the Least Significant Byte, the MINOR number the
-next byte up, and the MAJOR in the third byte. The fourth byte contains the 
+next byte up, and the MAJOR in the third byte. The fourth byte contains the
 compile time options.
 
 There are several things that could be done to speed up the database but this
@@ -382,7 +382,7 @@ would complicate the implementation and the API.
 # BUILD REQUIREMENTS
 
 If you are building the program from the repository at
-<https://github.com/howerj/cdb> you will need [GNU Make][] and a [C Compiler][]. 
+<https://github.com/howerj/cdb> you will need [GNU Make][] and a [C Compiler][].
 The library is written in pure [C99][] and should be fairly simple
 to port to another platform. Other [Make][] implementations may work, however
 they have not been tested. [git][] is also used as part of the build system.
@@ -417,10 +417,12 @@ along with a [CRC][], adding (unsafe) functions for rewriting key-values,
 adding (de)compression (with the [shrink][] library) and decryption,
 integrating the project in an embedded system in conjunction with [littlefs][]
 as an example, allowing the user to supply their own comparison and hash
-functions, adding types and schemas to the database, and more. 
+functions, adding types and schemas to the database, and more. The project
+could also be used as the primary database library for the [pickle][]
+interpreter, or for serving static content in the [eweb][] web-server.
 
-All of these would add complexity, and more code - making it more useful 
-to some and less to others. As such, apart from bugs, the library and test 
+All of these would add complexity, and more code - making it more useful
+to some and less to others. As such, apart from bugs, the library and test
 driver programs should be considered complete.
 
 # BUGS
@@ -429,12 +431,12 @@ For any bugs, email the [author][]. It comes with a 'works on my machine
 guarantee'. The code has been written with the intention of being portable, and
 should work on 32-bit and 64-bit machines. It is tested more frequently on a
 64-bit Linux machine, and less frequently on Windows. Please give a
-detailed bug report (including but not limited to what machine/OS you are 
+detailed bug report (including but not limited to what machine/OS you are
 running on, compiler, compiler version, a failing example test case, etcetera).
 
 # COPYRIGHT
 
-The libraries, documentation, and the test driver program are licensed under 
+The libraries, documentation, and the test driver program are licensed under
 the [Unlicense][]. Do what thou wilt.
 
 [author]: howe.r.j.89@gmail.com
@@ -460,3 +462,5 @@ the [Unlicense][]. Do what thou wilt.
 [Semantic Version Number]: https://semver.org/
 [awk]: https://en.wikipedia.org/wiki/AWK
 [original cdb]: https://cr.yp.to/cdb.html
+[pickle]: https://github.com/howerj/pickle
+[eweb]: https://github.com/howerj/eweb

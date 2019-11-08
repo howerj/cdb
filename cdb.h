@@ -62,8 +62,8 @@ typedef struct {
 
 typedef int (*cdb_callback)(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param);
 
-CDB_API unsigned long cdb_version(void); /* returns: version number in x.y.z format, z = LSB, MSB is library info */
-CDB_API uint32_t cdb_hash(void *data, size_t length);
+CDB_API uint32_t cdb_get_version(void); /* returns: version number in x.y.z format, z = LSB, MSB is library info */
+CDB_API uint32_t cdb_hash(const void *data, size_t length);
 CDB_API cdb_word_t cdb_read(cdb_t *cdb, void *buf, cdb_word_t length); /* returns: number of chars read / zero on error or length == 0 */
 
 /* All functions return: < 0 on failure, 0 on success/not found, 1 on found if applicable */
@@ -76,7 +76,6 @@ CDB_API int cdb_get_error(cdb_t *cdb);
 CDB_API int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param);
 CDB_API int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value);
 CDB_API int cdb_seek(cdb_t *cdb, cdb_word_t position, int whence);
-CDB_API int cdb_read_word(cdb_t *cdb, cdb_word_t *word);
 CDB_API int cdb_read_word_pair(cdb_t *cdb, cdb_word_t *w1, cdb_word_t *w2);
 CDB_API int cdb_tests(cdb_file_operators_t *ops, cdb_allocator_t *allocator, const char *test_file);
 

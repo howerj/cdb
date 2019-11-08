@@ -71,7 +71,7 @@ struct cdb { /* constant database handle: for all your querying needs! */
 	cdb_file_operators_t ops; /* custom file/flash operators */
 	cdb_allocator_t a;     /* custom memory allocator routine */
 	void *file;            /* database handle */
-	cdb_word_t file_start, /* start position of structures in file */ 
+	cdb_word_t file_start, /* start position of structures in file */
 	       file_end,       /* end position of database in file, if known, zero otherwise */
 	       hash_start;     /* start of secondary hash tables near end of file, if known, zero otherwise */
 	cdb_word_t position;   /* key/value file pointer position (creation only) */
@@ -82,12 +82,12 @@ struct cdb { /* constant database handle: for all your querying needs! */
 	cdb_hash_table_t table1[]; /* only allocated if in create mode, BUCKETS elements are allocated */
 };
 
-/* To make the library easier to use we could provide a set of default 
+/* To make the library easier to use we could provide a set of default
  * allocators (that when compiled out always return an error), the non-thread
  * safe allocator would return a pointer to a statically declared variable and
  * mark it as being used. */
 
-unsigned long cdb_version(void) { /* should've been called 'cdb_get_version'...*/
+uint32_t cdb_get_version(void) {
 	BUILD_BUG_ON(CDB_SIZE != 16 && CDB_SIZE != 32 && CDB_SIZE != 64);
 	BUILD_BUG_ON((sizeof (cdb_word_t) * CHAR_BIT) != CDB_SIZE);
 	unsigned long spec = CDB_SIZE >> 4; /* Lowest three bits = size */
@@ -105,7 +105,7 @@ int cdb_get_error(cdb_t *cdb) {
 }
 
 /* This is not 'djb2' hash - the character is xor'ed in and not added. */
-static uint32_t djb_hash(uint8_t *s, const size_t length) {
+static uint32_t djb_hash(const uint8_t *s, const size_t length) {
 	assert(s);
 	uint32_t h = 5381ul;
 	for (cdb_word_t i = 0; i < length; i++)
@@ -113,7 +113,7 @@ static uint32_t djb_hash(uint8_t *s, const size_t length) {
 	return h;
 }
 
-uint32_t cdb_hash(void *data, const size_t length) {
+uint32_t cdb_hash(const void *data, const size_t length) {
 	return djb_hash(data, length);
 }
 
@@ -206,18 +206,6 @@ static inline cdb_word_t cdb_unpack(uint8_t b[/*static (sizeof (cdb_word_t))*/])
 	for (size_t i = 0; i < sizeof w; i++)
 		w |= ((cdb_word_t)b[i]) << (i * CHAR_BIT);
 	return w;
-}
-
-int cdb_read_word(cdb_t *cdb, cdb_word_t *word) {
-	assert(cdb);
-	assert(word);
-	uint8_t b[sizeof *word];
-	*word = 0;
-	const long r = cdb_read(cdb, b, sizeof b);
-	if (r != sizeof b)
-		return -1;
-	*word = cdb_unpack(b);
-	return 0;
 }
 
 int cdb_read_word_pair(cdb_t *cdb, cdb_word_t *w1, cdb_word_t *w2) {
@@ -326,7 +314,7 @@ static inline int cdb_finalize(cdb_t *cdb) { /* write hash tables to disk */
 		for (cdb_word_t j = 0; j < length; j++)
 			if (cdb_write_word_pair(cdb, hashes[j], positions[j]) < 0)
 				goto fail;
-		
+	
 		cdb->position += (length * (2ul * sizeof(cdb_word_t)));
 	}
 	cdb->file_end = cdb->position;
@@ -506,7 +494,7 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 			goto fail;
 	}
 	if (num == 0) /* no keys in this bucket -> key not found */
-		return cdb_status(cdb) < 0 ? CDB_ERROR_E : CDB_NOT_FOUND_E; 
+		return cdb_status(cdb) < 0 ? CDB_ERROR_E : CDB_NOT_FOUND_E;
 	if (cdb_bound_check(cdb, pos > cdb->file_end || pos < cdb->hash_start) < 0)
 		goto fail;
 	const cdb_word_t start = (h >> NBUCKETS) % num;
@@ -523,7 +511,7 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 			goto fail;
 		if (p1 == 0) /* end of list */ {
 			*record = recno;
-			return cdb_status(cdb) < 0 ? CDB_ERROR_E : CDB_NOT_FOUND_E; 
+			return cdb_status(cdb) < 0 ? CDB_ERROR_E : CDB_NOT_FOUND_E;
 		}
 		if (cdb_hash_check(cdb, (h1 & 0xFFul) != (h & 0xFFul)) < 0) /* buckets bits should be the same */
 			goto fail;
@@ -545,19 +533,19 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 				cdb_file_pos_t v2 = { .length = vlen, .position = k2.position + klen };
 				if (cdb_overflow_check(cdb, (v2.position + v2.length) < v2.position) < 0)
 					goto fail;
-				if (cdb_bound_check(cdb, v2.position > cdb->hash_start) < 0) 
+				if (cdb_bound_check(cdb, v2.position > cdb->hash_start) < 0)
 					goto fail;
 				if (cdb_bound_check(cdb, (v2.position + v2.length) > cdb->hash_start) < 0)
 					goto fail;
 				*record = recno;
 				*value = v2;
-				return cdb_status(cdb) < 0 ? CDB_ERROR_E : CDB_FOUND_E; 
+				return cdb_status(cdb) < 0 ? CDB_ERROR_E : CDB_FOUND_E;
 			}
 			recno++;
 		}
 	}
 	*record = recno;
-	return cdb_status(cdb) < 0 ? CDB_ERROR_E : CDB_NOT_FOUND_E; 
+	return cdb_status(cdb) < 0 ? CDB_ERROR_E : CDB_NOT_FOUND_E;
 fail:
 	return cdb_error(cdb, CDB_ERROR_E);
 }

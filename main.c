@@ -327,7 +327,7 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 	unsigned long distances[DISTMAX] = { 0 };
 	unsigned long entries = 0, occupied = 0, collisions = 0, hmin = ULONG_MAX, hmax = 0;
 	double avg_key_length = 0, avg_value_length = 0, avg_hash_length = 0;
-	cdb_statistics_t s = { 
+	cdb_statistics_t s = {
 		.records          = 0,
 		.min_key_length   = ULONG_MAX,
 		.min_value_length = ULONG_MAX,
@@ -395,10 +395,10 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 
 	if (fprintf(output, "records:\t\t\t%lu\n", s.records) < 0)
 		return -1;
-	if (fprintf(output, "key   min/max/avg/bytes:\t%lu/%lu/%g/%lu\n", 
+	if (fprintf(output, "key   min/max/avg/bytes:\t%lu/%lu/%g/%lu\n",
 		s.min_key_length, s.max_key_length, avg_key_length, s.total_key_length) < 0)
 		return -1;
-	if (fprintf(output, "value min/max/avg/bytes:\t%lu/%lu/%g/%lu\n", 
+	if (fprintf(output, "value min/max/avg/bytes:\t%lu/%lu/%g/%lu\n",
 		s.min_value_length, s.max_value_length, avg_value_length, s.total_value_length) < 0)
 		return -1;
 	if (fprintf(output, "top hash table used/collisions:\t%lu/%lu/%lu\n", occupied, entries, collisions) < 0)
@@ -445,15 +445,15 @@ static int cdb_query_prompt(cdb_t *cdb, FILE *input, FILE *output, const char *p
 		case 'q': case EOF: goto end;
 		case ' ': case '\t': case '\r': continue;
 		case '\n': goto prompt;
-		case 's': 
+		case 's':
 			if (cdb_stats_print(cdb, output, 0) < 0)
 				goto fail;
 			continue;
-		case 'k': 
+		case 'k':
 			if (cdb_foreach(cdb, cdb_dump_keys, output) < 0)
 				goto fail;
 			continue;
-		case 'd': 
+		case 'd':
 			if (cdb_foreach(cdb, cdb_dump, output) < 0)
 				goto fail;
 			continue;
@@ -470,7 +470,7 @@ static int cdb_query_prompt(cdb_t *cdb, FILE *input, FILE *output, const char *p
 			if (fscanf(input, "%lu", &record) != 1)
 				goto wrong;
 			ch1 = fgetc(input);
-		} 
+		}
 		if (':' != ch1)
 			goto wrong;
 
@@ -488,7 +488,7 @@ static int cdb_query_prompt(cdb_t *cdb, FILE *input, FILE *output, const char *p
 		if (ch2 != '\n' && ch2 != EOF)
 			if (ungetc(ch2, input) < 0)
 				goto wrong;
-		
+	
 		const cdb_buffer_t kb = { .length = klen, .buffer = key };
 		cdb_file_pos_t vp = { 0, 0 };
 		const int g = cdb_get_record(cdb, &kb, &vp, record);
@@ -550,7 +550,7 @@ static int cdb_validate(cdb_t *cdb) {
 static int help(FILE *output, const char *arg0) {
 	assert(output);
 	assert(arg0);
-	unsigned long version = cdb_version();
+	unsigned long version = cdb_get_version();
 	unsigned q = (version >> 24) & 0xff;
 	unsigned x = (version >> 16) & 0xff;
 	unsigned y = (version >>  8) & 0xff;
@@ -693,3 +693,4 @@ int main(int argc, char **argv) {
 	}
 	return r;
 }
+

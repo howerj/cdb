@@ -1,17 +1,12 @@
 # CDB makefile - default target should build everything
 #
-# <https://news.ycombinator.com/item?id=15400396>
-# EXTRA = -Wduplicated-cond -Wlogical-op \
-#	-Wnull-dereference -Wjump-misses-init \
-#	-Wshadow 
-
-VERSION=0x010203ul
-CFLAGS=-Wall -Wextra -fPIC -std=c99 -O2 -pedantic -g -fwrapv ${DEFINES} ${EXTRA} -DCDB_VERSION="${VERSION}"
-TARGET=cdb
-AR      = ar
-ARFLAGS = rcs
-RANLIB  = ranlib
-DESTDIR = install
+VERSION =0x020000ul
+CFLAGS  =-Wall -Wextra -fPIC -std=c99 -O2 -pedantic -g -fwrapv ${DEFINES} ${EXTRA} -DCDB_VERSION="${VERSION}"
+TARGET  =cdb
+AR      =ar
+ARFLAGS =rcs
+RANLIB  =ranlib
+DESTDIR =install
 
 ifeq ($(OS),Windows_NT)
 DLL=dll

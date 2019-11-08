@@ -16,7 +16,7 @@ for CDB in cdb cdb16 cdb32 cdb64; do
 
 	./${CDB} -c ${EMPTYDB} <<EOF
 EOF
-	./${CDB} -t bist.cdb; 
+	./${CDB} -t bist.cdb;
 	./${CDB} -d bist.cdb | sort > bist.txt;
 	./${CDB} -c copy.cdb -T temp.cdb < bist.txt;
 	./${CDB} -d copy.cdb | sort > copy.txt;
@@ -123,18 +123,18 @@ EOF
 	set +x;
 
 	# # make clean
-	# 
+	#
 	# # Extra stuff, not used yet as it needs speeding up. A PRNG could
 	# # be made in pure sh to do so, otherwise we are shelling out too much.
-	# 
+	#
 	# r999 () {
 	# 	echo $(cat ${RANDOMSRC} | tr -dc '0-9' | fold -w 256 | head -n 1 | sed -e 's/^0*//' | head --bytes 3);
 	# }
-	# 
+	#
 	# rlen() {
 	# 	echo $(cat ${RANDOMSRC} | tr -dc 'a-zA-Z0-9' | fold -w "${1}" | head -n 1)
 	# }
-	# 
+	#
 	# FILE=rnd
 	# rm -fv "${FILE}.txt ${FILE}.cdb";
 	# for i in $(seq 1 1000); do
@@ -144,9 +144,9 @@ EOF
 	# 	VALUE=$(rlen ${VLEN})
 	# 	echo "+${KLEN},${VLEN}:${KEY}->${VALUE}" >> ${FILE}.txt
 	# done;
-	# 
+	#
 	# ./${CDB} -c ${FILE}.cdb < ${FILE}.txt
- 
+
 done;
 
 make clean
