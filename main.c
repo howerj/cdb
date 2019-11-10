@@ -74,6 +74,23 @@ static void die(const char *fmt, ...) {
 	exit(EXIT_FAILURE);
 }
 
+static inline int buffer(FILE *in, FILE *out) {
+	assert(in);
+	assert(out);
+	static int used = 0;
+	static char ibuf[BUFSIZ], obuf[BUFSIZ];
+	if (used)
+		return -1;
+	used = 1;
+	if (in)
+		if (setvbuf(in,  ibuf, _IOFBF, sizeof ibuf) < 0)
+			return -1;
+	if (out)
+		if (setvbuf(out, obuf, _IOFBF, sizeof obuf) < 0)
+			return -1;
+	return 0;
+}
+
 /* Adapted from: <https://stackoverflow.com/questions/10404448> */
 static int cdb_getopt(cdb_getopt_t *opt, const int argc, char *const argv[], const char *fmt) {
 	assert(opt);
@@ -135,6 +152,17 @@ static int cdb_getopt(cdb_getopt_t *opt, const int argc, char *const argv[], con
 	return opt->option; /* dump back option letter */
 }
 
+static void *cdb_allocator_cb(void *arena, void *ptr, const size_t oldsz, const size_t newsz) {
+	UNUSED(arena);
+	if (newsz == 0) {
+		free(ptr);
+		return NULL;
+	}
+	if (newsz > oldsz)
+		return realloc(ptr, newsz);
+	return ptr;
+}
+
 static cdb_word_t cdb_read_cb(void *file, void *buf, size_t length) {
 	assert(file);
 	assert(buf);
@@ -176,29 +204,13 @@ static int cdb_flush_cb(void *file) {
 	return fflush((FILE*)file);
 }
 
-static void *cdb_malloc_cb(void *arena, const size_t length) {
-	UNUSED(arena);
-	return malloc(length);
-}
-
-static void *cdb_realloc_cb(void *arena, void *pointer, const size_t length) {
-	UNUSED(arena);
-	return realloc(pointer, length);
-}
-
-static int cdb_free_cb(void *arena, void *pointer) {
-	UNUSED(arena);
-	free(pointer);
-	return 0;
-}
-
 static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
 	assert(cdb);
 	assert(fp);
 	assert(output);
 	if (cdb_seek(cdb, fp->position, CDB_SEEK_START) < 0)
 		return -1;
-	char buf[IO_BUFFER_SIZE] = { 0 };
+	char buf[IO_BUFFER_SIZE];
 	const size_t length = fp->length;
 	for (size_t i = 0; i < length; i += sizeof buf) {
 		const size_t r = cdb_read(cdb, buf, MIN(sizeof buf, length - i));
@@ -209,17 +221,49 @@ static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
 	return 0;
 }
 
+static inline void reverse(char * const r, const size_t length) {
+	const size_t last = length - 1;
+	for (size_t i = 0; i < length / 2ul; i++) {
+		const size_t t = r[i];
+		r[i] = r[last - i];
+		r[last - i] = t;
+	}
+}
+
+static unsigned num2str(char b[64], unsigned long u) {
+	unsigned i = 0;
+	do {
+		const unsigned long base = 10; /* bases 2-10 allowed */
+		const unsigned long q = u % base;
+		const unsigned long r = u / base;
+		b[i++] = q + '0';
+		u = r;
+	} while (u);
+	b[i] = '\0';
+	reverse(b, i);
+	return i;
+}
+
 static int cdb_dump(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param) {
 	assert(cdb);
 	assert(key);
 	assert(value);
 	assert(param);
 	FILE *output = param;
-	if (fprintf(output, "+%lu,%lu:", (unsigned long)key->length, (unsigned long)value->length) < 0)
+	char kstr[64+1], vstr[64+2];
+	kstr[0] = '+';
+	const unsigned kl = num2str(kstr + 1, key->length) + 1;
+	vstr[0] = ',';
+	const unsigned nl = num2str(vstr + 1, value->length) + 1;
+	if (fwrite(kstr, 1, kl, output) != kl)
+		return -1;
+	vstr[nl]     = ':';
+	vstr[nl + 1] = '\0';
+	if (fwrite(vstr, 1, nl + 1, output) != (nl + 1))
 		return -1;
 	if (cdb_print(cdb, key, output) < 0)
 		return -1;
-	if (fputs("->", output) < 0)
+	if (fwrite("->", 1, 2, output) != 2)
 		return -1;
 	if (cdb_print(cdb, value, output) < 0)
 		return -1;
@@ -232,7 +276,12 @@ static int cdb_dump_keys(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_p
 	assert(value);
 	assert(param);
 	FILE *output = param;
-	if (fprintf(output, "+%lu:", (unsigned long)key->length) < 0)
+	char kstr[64+2];
+	kstr[0] = '+';
+	const unsigned kl = num2str(kstr + 1, key->length) + 1;
+	kstr[kl]     = ':'; 
+	kstr[kl + 1] = '\0';
+	if (fwrite(kstr, 1, kl + 1, output) != (kl + 1))
 		return -1;
 	if (cdb_print(cdb, key, output) < 0)
 		return -1;
@@ -401,7 +450,7 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 	if (fprintf(output, "value min/max/avg/bytes:\t%lu/%lu/%g/%lu\n",
 		s.min_value_length, s.max_value_length, avg_value_length, s.total_value_length) < 0)
 		return -1;
-	if (fprintf(output, "top hash table used/collisions:\t%lu/%lu/%lu\n", occupied, entries, collisions) < 0)
+	if (fprintf(output, "top hash table used/entries/collisions:\t%lu/%lu/%lu\n", occupied, entries, collisions) < 0)
 		return -1;
 	if (fprintf(output, "hash tables min/avg/max:\t%lu/%g/%lu\n", hmin, avg_hash_length, hmax) < 0)
 		return -1;
@@ -601,27 +650,21 @@ int main(int argc, char **argv) {
 	binary(stdout);
 	binary(stderr);
 
-	cdb_allocator_t allocator = {
-		.malloc  = cdb_malloc_cb,
-		.realloc = cdb_realloc_cb,
-		.free    = cdb_free_cb,
-		.arena   = NULL,
-	};
-
-	cdb_file_operators_t ops = {
-		.read  = cdb_read_cb,
-		.write = cdb_write_cb,
-		.seek  = cdb_seek_cb,
-		.open  = cdb_open_cb,
-		.close = cdb_close_cb,
-		.flush = cdb_flush_cb,
+	static const cdb_callbacks_t ops = {
+		.allocator = cdb_allocator_cb,
+		.read      = cdb_read_cb,
+		.write     = cdb_write_cb,
+		.seek      = cdb_seek_cb,
+		.open      = cdb_open_cb,
+		.close     = cdb_close_cb,
+		.flush     = cdb_flush_cb,
 	};
 
 	cdb_getopt_t opt = { .init = 0 };
 	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hvr:t:c:d:k:s:q:V:p:T:")) != -1; ) {
 		switch (ch) {
 		case 'h': return help(stdout, argv[0]), 0;
-		case 't': return -cdb_tests(&ops, &allocator, opt.arg);
+		case 't': return -cdb_tests(&ops, NULL, opt.arg);
 		case 'v': verbose++;                       break;
 		case 'r': file = opt.arg; mode = READ;     break;
 		case 'c': file = opt.arg; mode = CREATE;   break;
@@ -654,7 +697,7 @@ int main(int argc, char **argv) {
 	const char *name = creating && tmp ? tmp : file;
 	info("opening '%s' for %s", name, creating ? "writing" : "reading");
 
-	if (cdb_open(&cdb, &ops, &allocator, creating, name) < 0) {
+	if (cdb_open(&cdb, &ops, NULL, creating, name) < 0) {
 		const char *stre = strerror(errno);
 		const char *mstr = creating ? "create" : "read";
 		die("opening file '%s' in %s mode failed: %s", name, mstr, stre);

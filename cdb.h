@@ -28,6 +28,11 @@ typedef uint16_t cdb_word_t;
 typedef uint32_t cdb_word_t;
 #endif
 
+#ifndef ALLOCATOR_FN
+#define ALLOCATOR_FN
+typedef void *(*allocator_fn)(void *arena, void *ptr, size_t oldsz, size_t newsz);
+#endif
+
 struct cdb;
 typedef struct cdb cdb_t;
 
@@ -35,20 +40,14 @@ enum { CDB_SEEK_START, CDB_SEEK_CURRENT, CDB_SEEK_END, };
 enum { CDB_RO_MODE, CDB_RW_MODE };
 
 typedef struct {
-	void *(*malloc)(void *arena, size_t length);
-	void *(*realloc)(void *arena, void *pointer, size_t length);
-	int (*free)(void *arena, void *pointer);
-	void *arena;
-} cdb_allocator_t; /* custom allocator interface; mostly used for creation of database */
-
-typedef struct {
+	allocator_fn allocator;
 	cdb_word_t (*read)(void *file, void *buf, size_t length);
 	cdb_word_t (*write)(void *file, void *buf, size_t length); /* (conditionally optional) needed for creation only */
 	int (*seek)(void *file, long offset, long whence);
 	void *(*open)(const char *name, int mode);
 	int (*close)(void *file);
 	int (*flush)(void *file); /* (optional) called at end of successful creation */
-} cdb_file_operators_t; /* a file abstraction layer, could point to memory, flash, or disk */
+} cdb_callbacks_t; /* a file abstraction layer, could point to memory, flash, or disk */
 
 typedef struct {
 	cdb_word_t length; /* length of data */
@@ -58,7 +57,7 @@ typedef struct {
 typedef struct {
 	cdb_word_t position; /* position in file, for use with cdb_read/cdb_seek */
 	cdb_word_t length;   /* length of data on disk, for use with cdb_read */
-} cdb_file_pos_t; /* used to represent a value on disk that can be accessed via 'cdb_file_operators_t' */
+} cdb_file_pos_t; /* used to represent a value on disk that can be accessed via 'cdb_callbacks_t' */
 
 typedef int (*cdb_callback)(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param);
 
@@ -67,7 +66,7 @@ CDB_API uint32_t cdb_hash(const void *data, size_t length);
 CDB_API cdb_word_t cdb_read(cdb_t *cdb, void *buf, cdb_word_t length); /* returns: number of chars read / zero on error or length == 0 */
 
 /* All functions return: < 0 on failure, 0 on success/not found, 1 on found if applicable */
-CDB_API int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator, int create, const char *file);
+CDB_API int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, void *arena, int create, const char *file); /* arena may be NULL */
 CDB_API int cdb_close(cdb_t *cdb);  /* free cdb, close (and write to disk if in create mode) */
 CDB_API int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value);
 CDB_API int cdb_get_record(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, long record);
@@ -77,7 +76,7 @@ CDB_API int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param);
 CDB_API int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value);
 CDB_API int cdb_seek(cdb_t *cdb, cdb_word_t position, int whence);
 CDB_API int cdb_read_word_pair(cdb_t *cdb, cdb_word_t *w1, cdb_word_t *w2);
-CDB_API int cdb_tests(cdb_file_operators_t *ops, cdb_allocator_t *allocator, const char *test_file);
+CDB_API int cdb_tests(const cdb_callbacks_t *ops, void *arena, const char *test_file);
 
 #ifdef __cplusplus
 }
