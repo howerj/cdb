@@ -74,23 +74,6 @@ static void die(const char *fmt, ...) {
 	exit(EXIT_FAILURE);
 }
 
-static inline int buffer(FILE *in, FILE *out) {
-	assert(in);
-	assert(out);
-	static int used = 0;
-	static char ibuf[BUFSIZ], obuf[BUFSIZ];
-	if (used)
-		return -1;
-	used = 1;
-	if (in)
-		if (setvbuf(in,  ibuf, _IOFBF, sizeof ibuf) < 0)
-			return -1;
-	if (out)
-		if (setvbuf(out, obuf, _IOFBF, sizeof obuf) < 0)
-			return -1;
-	return 0;
-}
-
 /* Adapted from: <https://stackoverflow.com/questions/10404448> */
 static int cdb_getopt(cdb_getopt_t *opt, const int argc, char *const argv[], const char *fmt) {
 	assert(opt);
@@ -213,9 +196,11 @@ static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
 	char buf[IO_BUFFER_SIZE];
 	const size_t length = fp->length;
 	for (size_t i = 0; i < length; i += sizeof buf) {
-		const size_t r = cdb_read(cdb, buf, MIN(sizeof buf, length - i));
-		assert(r <= sizeof buf);
-		if (fwrite(buf, 1, r, output) != r)
+		const size_t l = length - i;
+		assert(l <= sizeof buf);
+		if (cdb_read(cdb, buf, MIN(sizeof buf, l)) < 0)
+			return -1;
+		if (fwrite(buf, 1, l, output) != l)
 			return -1;
 	}
 	return 0;
@@ -230,12 +215,12 @@ static inline void reverse(char * const r, const size_t length) {
 	}
 }
 
-static unsigned num2str(char b[64], unsigned long u) {
+static unsigned num_to_str(char b[64], cdb_word_t u) {
 	unsigned i = 0;
 	do {
-		const unsigned long base = 10; /* bases 2-10 allowed */
-		const unsigned long q = u % base;
-		const unsigned long r = u / base;
+		const cdb_word_t base = 10; /* bases 2-10 allowed */
+		const cdb_word_t q = u % base;
+		const cdb_word_t r = u / base;
 		b[i++] = q + '0';
 		u = r;
 	} while (u);
@@ -252,9 +237,9 @@ static int cdb_dump(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t 
 	FILE *output = param;
 	char kstr[64+1], vstr[64+2];
 	kstr[0] = '+';
-	const unsigned kl = num2str(kstr + 1, key->length) + 1;
+	const unsigned kl = num_to_str(kstr + 1, key->length) + 1;
 	vstr[0] = ',';
-	const unsigned nl = num2str(vstr + 1, value->length) + 1;
+	const unsigned nl = num_to_str(vstr + 1, value->length) + 1;
 	if (fwrite(kstr, 1, kl, output) != kl)
 		return -1;
 	vstr[nl]     = ':';
@@ -278,7 +263,7 @@ static int cdb_dump_keys(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_p
 	FILE *output = param;
 	char kstr[64+2];
 	kstr[0] = '+';
-	const unsigned kl = num2str(kstr + 1, key->length) + 1;
+	const unsigned kl = num_to_str(kstr + 1, key->length) + 1;
 	kstr[kl]     = ':'; 
 	kstr[kl + 1] = '\0';
 	if (fwrite(kstr, 1, kl + 1, output) != (kl + 1))
@@ -288,21 +273,72 @@ static int cdb_dump_keys(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_p
 	return fputc('\n', output);
 }
 
+static int str_to_num(const char *s, cdb_word_t *out) {
+	assert(s);
+	cdb_word_t result = 0;
+	int ch = s[0];
+	*out = 0;
+	if (!ch)
+		return -1;
+	for (size_t j = 0; j < 64 && (ch = s[j]); j++) {
+		const int digit = ch - '0';
+		if (digit < 0 || digit > 9)
+			return -1;
+		result = digit + (result * (cdb_word_t)10ul);
+	}
+	if (ch)
+		return -1;
+	*out = result;
+	return 0;
+}
+
+static int scan(FILE *input, cdb_word_t *out, int delim) {
+	assert(input);
+	char b[64];
+	size_t i = 0;
+	int ch = 0;
+	for (i = 0; i < sizeof (b) && (EOF != (ch = fgetc(input))) && isdigit(ch); i++)
+		b[i] = ch;
+	if (i == sizeof(b))
+		return -1;
+	b[i] = '\0';
+	if (delim == 0) {
+		if (ungetc(ch, input) < 0)
+			return -1;
+	} else if (ch != delim) {
+		return -1;
+	}
+	return str_to_num(b, out);
+}
+
 static int cdb_create(cdb_t *cdb, FILE *input) {
 	assert(cdb);
 	assert(input);
+
+	char ibuf[BUFSIZ];
+	if (setvbuf(input, ibuf, _IOFBF, sizeof ibuf) < 0)
+		return -1;
+
 	int r = 0;
 	size_t kmlen = IO_BUFFER_SIZE, vmlen = IO_BUFFER_SIZE;
 	char *key = malloc(kmlen);
 	char *value = malloc(vmlen);
 	if (!key || !value)
 		goto fail;
+
 	for (;;) {
-		unsigned long klen = 0, vlen = 0;
+		cdb_word_t klen = 0, vlen = 0;
 		char sep[2] = { 0 };
-		if (fscanf(input, "+%lu,%lu", &klen, &vlen) != 2)
+		const int first = fgetc(input);
+		if (first == EOF)
 			goto end;
-		if (fgetc(input) != ':')
+		if (isspace(first))
+			continue;
+		if (first != '+')
+			goto fail;
+		if (scan(input, &klen, ',') < 0)
+			goto fail;
+		if (scan(input, &vlen, ':') < 0)
 			goto fail;
 		if (kmlen < klen) {
 			char *t = realloc(key, klen);
@@ -466,109 +502,6 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 	return 0;
 }
 
-static int cdb_prompt(FILE *output, const char *prompt) {
-	assert(output);
-	if (fputs(prompt, output) < 0)
-		return -1;
-	if (fflush(output) < 0)
-		return -1;
-	return 0;
-}
-
-static int cdb_query_prompt(cdb_t *cdb, FILE *input, FILE *output, const char *prompt) {
-	assert(cdb);
-	assert(input);
-	assert(output);
-	assert(prompt);
-	int r = 0;
-	size_t kmlen = IO_BUFFER_SIZE;
-	char *key = malloc(kmlen);
-	if (!key)
-		goto fail;
-	if (cdb_prompt(output, prompt) < 0)
-		goto fail;
-	for (;;) {
-		unsigned long klen = 0;
-		const int ch0 = fgetc(input);
-		switch (ch0) {
-		case 'q': case EOF: goto end;
-		case ' ': case '\t': case '\r': continue;
-		case '\n': goto prompt;
-		case 's':
-			if (cdb_stats_print(cdb, output, 0) < 0)
-				goto fail;
-			continue;
-		case 'k':
-			if (cdb_foreach(cdb, cdb_dump_keys, output) < 0)
-				goto fail;
-			continue;
-		case 'd':
-			if (cdb_foreach(cdb, cdb_dump, output) < 0)
-				goto fail;
-			continue;
-		}
-
-		if (ch0 != '+')
-			goto wrong;
-		if (fscanf(input, "%lu", &klen) != 1)
-			goto wrong;
-
-		int ch1 = fgetc(input);
-		unsigned long record = 0;
-		if (ch1 == '#') {
-			if (fscanf(input, "%lu", &record) != 1)
-				goto wrong;
-			ch1 = fgetc(input);
-		}
-		if (':' != ch1)
-			goto wrong;
-
-		if (kmlen < klen) {
-			char *t = realloc(key, klen);
-			if (!t)
-				goto fail;
-			key = t;
-		}
-
-		if (klen != fread(key, 1, klen, input))
-			goto wrong;
-
-		const int ch2 = fgetc(input);
-		if (ch2 != '\n' && ch2 != EOF)
-			if (ungetc(ch2, input) < 0)
-				goto wrong;
-	
-		const cdb_buffer_t kb = { .length = klen, .buffer = key };
-		cdb_file_pos_t vp = { 0, 0 };
-		const int g = cdb_get_record(cdb, &kb, &vp, record);
-		if (g < 0) {
-			goto fail;
-		} else if (g == 0) {
-			goto wrong;
-		} else {
-			if (fprintf(output, "%lu:", (unsigned long)vp.length) < 0)
-				goto fail;
-			if (cdb_print(cdb, &vp, output) < 0)
-				goto fail;
-			if (fputc('\n', output) < 0)
-				goto fail;
-		}
-		continue;
-	wrong:
-		if (cdb_prompt(output, "?\n") < 0)
-			goto fail;
-		continue;
-	prompt:
-		if (cdb_prompt(output, prompt) < 0)
-			goto fail;
-	}
-fail:
-	r = -1;
-end:
-	free(key);
-	return r;
-}
-
 static int cdb_query(cdb_t *cdb, char *key, int record, FILE *output) {
 	assert(cdb);
 	assert(key);
@@ -591,19 +524,16 @@ static int cdb_null_cb(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos
 	return 0;
 }
 
-static int cdb_validate(cdb_t *cdb) {
-	assert(cdb);
-	return cdb_foreach(cdb, cdb_null_cb, NULL);
-}
-
 static int help(FILE *output, const char *arg0) {
 	assert(output);
 	assert(arg0);
-	unsigned long version = cdb_get_version();
-	unsigned q = (version >> 24) & 0xff;
-	unsigned x = (version >> 16) & 0xff;
-	unsigned y = (version >>  8) & 0xff;
-	unsigned z = (version >>  0) & 0xff;
+	unsigned long version = 0;
+	if (cdb_get_version(&version) < 0)
+		info("version not set - built incorrectly");
+	const unsigned q = (version >> 24) & 0xff;
+	const unsigned x = (version >> 16) & 0xff;
+	const unsigned y = (version >>  8) & 0xff;
+	const unsigned z = (version >>  0) & 0xff;
 	static const char *usage = "\
 Usage   : %s -hv *OR* -[rcdkstVT] file.cdb *OR* -q file.cdb key [record#]\n\
 Program : Constant Database Driver (clone of https://cr.yp.to/cdb.html)\n\
@@ -618,7 +548,6 @@ Notes   : See manual pages or project website for more information.\n\n\
 Options :\n\n\
 \t-h          : print this help message and exit successfully\n\
 \t-v          : increase verbosity level\n\
-\t-r file.cdb : start query prompt\n\
 \t-c file.cdb : create a new database reading keys from stdin\n\
 \t-d file.cdb : dump entire database\n\
 \t-k file.cdb : dump all keys (there may be duplicates)\n\
@@ -641,10 +570,10 @@ is an error.\n\
 }
 
 int main(int argc, char **argv) {
-	enum { READ, QUERY, DUMP, CREATE, STATS, KEYS, VALIDATE };
-	const char *file = NULL, *prompt = "> ";
+	enum { QUERY, DUMP, CREATE, STATS, KEYS, VALIDATE };
+	const char *file = NULL;
 	char tname[L_tmpnam] = { 0 }, *tmp = NULL;
-	int mode = READ, creating = 0;
+	int mode = VALIDATE, creating = 0;
 
 	binary(stdin);
 	binary(stdout);
@@ -661,19 +590,17 @@ int main(int argc, char **argv) {
 	};
 
 	cdb_getopt_t opt = { .init = 0 };
-	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hvr:t:c:d:k:s:q:V:p:T:")) != -1; ) {
+	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hvt:c:d:k:s:q:V:T:")) != -1; ) {
 		switch (ch) {
 		case 'h': return help(stdout, argv[0]), 0;
 		case 't': return -cdb_tests(&ops, NULL, opt.arg);
 		case 'v': verbose++;                       break;
-		case 'r': file = opt.arg; mode = READ;     break;
 		case 'c': file = opt.arg; mode = CREATE;   break;
 		case 'd': file = opt.arg; mode = DUMP;     break;
 		case 'k': file = opt.arg; mode = KEYS;     break;
 		case 's': file = opt.arg; mode = STATS;    break;
 		case 'q': file = opt.arg; mode = QUERY;    break;
 		case 'V': file = opt.arg; mode = VALIDATE; break;
-		case 'p': prompt = opt.arg;                break;
 		case 'T': tmp = opt.arg;                   break;
 		default: help(stderr, argv[0]); return 1;
 		}
@@ -705,12 +632,11 @@ int main(int argc, char **argv) {
 
 	int r = 0;
 	switch (mode) {
-	case CREATE:   r = cdb_create(cdb, stdin);                       break;
-	case READ:     r = cdb_query_prompt(cdb, stdin, stdout, prompt); break;
-	case DUMP:     r = cdb_foreach(cdb, cdb_dump, stdout);           break;
-	case KEYS:     r = cdb_foreach(cdb, cdb_dump_keys, stdout);      break;
-	case STATS:    r = cdb_stats_print(cdb, stdout, 0);              break;
-	case VALIDATE: r = cdb_validate(cdb);                            break;
+	case CREATE:   r = cdb_create(cdb, stdin);                                                       break;
+	case DUMP:     r = cdb_foreach(cdb, cdb_dump,      stdout); if (fputc('\n', stdout) < 0) r = -1; break;
+	case KEYS:     r = cdb_foreach(cdb, cdb_dump_keys, stdout); if (fputc('\n', stdout) < 0) r = -1; break;
+	case STATS:    r = cdb_stats_print(cdb, stdout, 0);                                              break;
+	case VALIDATE: r = cdb_foreach(cdb, cdb_null_cb, NULL);                                          break;
 	case QUERY: {
 		if (opt.index >= argc)
 			die("-q opt requires key (and optional record number)");

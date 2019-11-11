@@ -61,11 +61,8 @@ typedef struct {
 
 typedef int (*cdb_callback)(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param);
 
-CDB_API uint32_t cdb_get_version(void); /* returns: version number in x.y.z format, z = LSB, MSB is library info */
-CDB_API uint32_t cdb_hash(const void *data, size_t length);
-CDB_API cdb_word_t cdb_read(cdb_t *cdb, void *buf, cdb_word_t length); /* returns: number of chars read / zero on error or length == 0 */
-
 /* All functions return: < 0 on failure, 0 on success/not found, 1 on found if applicable */
+CDB_API int cdb_read(cdb_t *cdb, void *buf, cdb_word_t length); /* returns error code not length! */
 CDB_API int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, void *arena, int create, const char *file); /* arena may be NULL */
 CDB_API int cdb_close(cdb_t *cdb);  /* free cdb, close (and write to disk if in create mode) */
 CDB_API int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value);
@@ -73,10 +70,11 @@ CDB_API int cdb_get_record(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *
 CDB_API int cdb_get_count(cdb_t *cdb, const cdb_buffer_t *key, long *count);
 CDB_API int cdb_get_error(cdb_t *cdb);
 CDB_API int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param);
-CDB_API int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value);
+CDB_API int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value); /* do not call cdb_read and/or cdb_seek in open mode */
 CDB_API int cdb_seek(cdb_t *cdb, cdb_word_t position, int whence);
 CDB_API int cdb_read_word_pair(cdb_t *cdb, cdb_word_t *w1, cdb_word_t *w2);
 CDB_API int cdb_tests(const cdb_callbacks_t *ops, void *arena, const char *test_file);
+CDB_API int cdb_get_version(unsigned long *version); /* version number in x.y.z format, z = LSB, MSB is library info */
 
 #ifdef __cplusplus
 }
