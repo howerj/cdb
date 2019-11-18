@@ -34,26 +34,6 @@ EOF
 EOF
 	set +x;
 
-	CMDS=$(cat<<EOF
-+1#2:a
-+4:open
-+1#0:a
-+1#1:a
-
-EOF
-	);
-
-	RES=$(cat<<EOF
-1:c
-7:seasame
-1:b
-1:b
-EOF
-	);
-
-	echo "${RES}" > res.txt;
-	echo "${CMDS}" | ./${CDB} -p "" -r ${TESTDB} > cmds.txt;
-	diff -w res.txt cmds.txt;
 
 
 	t() {
@@ -98,6 +78,7 @@ EOF
 			done;
 		done;
 	done > seq.txt;
+	echo > seq.txt
 
 	dd if=/dev/zero of=invalid-1.cdb count=1 # Too small
 	dd if=/dev/zero of=invalid-2.cdb count=4 # Invalid hash table pointers

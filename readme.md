@@ -10,8 +10,6 @@ cdb -h
 
 cdb -\[cdkstV\] file.cdb
 
-cdb [-p prompt] -r file.cdb
-
 cdb -q file.cdb key \[record#\]
 
 # DESCRIPTION
@@ -46,11 +44,7 @@ which consist of key-value pairs of binary data.
 
 **-V**  *file.cdb* : validate database
 
-**-r**  *file.cdb* : read keys in a read-query-print loop
-
 **-q**  *file.cdb key record-number* : query the database for a key, with an optional record
-
-**-p** prompt : set prompt for read mode
 
 
 # EXAMPLES
@@ -93,7 +87,7 @@ A database dump can be read straight back in to create another database:
 # RETURN VALUE
 
 cdb returns zero on success/key found, and a non zero value on failure. Two is
-returned if a key is not found, any other value indicates are more serious
+returned if a key is not found, any other value indicates a more serious
 failure.
 
 # LIMITATIONS
@@ -125,33 +119,6 @@ An example, encoding the key value pair "abc" to "def" and "G" to "hello":
 
 	+3,3:abc->def
 	+1,5:G->hello
-
-When the program is in [REPL][] mode (using the **-r** option) there are
-several commands that can be issued. These are:
-
-	q - quit the program
-	s - print statistics about the open database
-	k - print all keys in the database
-	d - dump the entire database out
-	+ - retrieve a single item from the database if it exists
-
-The '+' option takes the format:
-
-	+key-length:KEY
-
-Or:
-	+key-length#record-number:KEY
-
-All commands should end in a newline. If a key is searched for and it is found
-it is printed out in the following format:
-
-	value-length:VALUE
-
-If the value was not found, or there was a format, a single '?' is printed.
-Helpful.
-
-Read mode has a prompt, which can be set or disabled with the **-p** option at
-startup. Create mode currently does not have a prompt.
 
 The following [awk][] script can be used to pre-process a series of key-value
 pairs in the format "key value", with one record per line and optional comment
@@ -309,8 +276,7 @@ a database requires opening up a new database in create mode:
 	/* error handling omitted for brevity */
 	cdb_t *cdb = NULL;
 	cdb_file_operators_t ops = { /* Your file callbacks go here */ };
-	cdb_allocator_t allocator = { /* Your memory callbacks go here */ };
-	cdb_open(&cdb, &ops, &allocator, 1, "example.cdb");
+	cdb_open(&cdb, &ops, NULL, 1, "example.cdb");
 	cdb_buffer_t key   = { .length = 5, .buffer = "hello" };
 	cdb_buffer_t value = { .length = 5, .buffer = "world" };
 	cdb_add(cdb, &key, &value);
@@ -338,8 +304,7 @@ read mode (create = 0):
 	/* error handling omitted for brevity */
 	cdb_t *cdb = NULL;
 	cdb_file_operators_t ops = { /* Your file callbacks go here */ };
-	cdb_allocator_t allocator = { /* Your memory callbacks go here */ };
-	cdb_open(&cdb, &ops, &allocator, 1, "example.cdb");
+	cdb_open(&cdb, &ops, NULL, 1, "example.cdb");
 	cdb_buffer_t key = { .length = 5, .buffer = "hello" };
 	cdb_file_pos_t value = { 0, 0 };
 	cdb_get(cdb, &key, &value);
@@ -369,9 +334,9 @@ deliberately not included in the header as the errors recorded and the
 meaning of their values may change. Use the source for the library to determine
 what error occurred.
 
-The function 'cdb\_get\_version' returns the version number and information about
-the compile time options selected when the library was built. A
-[Semantic Version Number][] is used, which takes the form "MAJOR.MINOR.PATCH".
+The function 'cdb\_get\_version' returns the version number in an out parameter 
+and information about the compile time options selected when the library was built. 
+A [Semantic Version Number][] is used, which takes the form "MAJOR.MINOR.PATCH".
 The PATCH number is stored in the Least Significant Byte, the MINOR number the
 next byte up, and the MAJOR in the third byte. The fourth byte contains the
 compile time options.
@@ -456,7 +421,6 @@ the [Unlicense][]. Do what thou wilt.
 [Make]: https://en.wikipedia.org/wiki/Make_(software)
 [sh]: https://en.wikipedia.org/wiki/Bourne_shell
 [git]: https://git-scm.com/
-[REPL]: https://en.wikipedia.org/wiki/Read%E2%80%93eval%E2%80%93print_loop
 [markdown]: https://daringfireball.net/projects/markdown/
 [American Fuzzy Lop]: http://lcamtuf.coredump.cx/afl/
 [Semantic Version Number]: https://semver.org/

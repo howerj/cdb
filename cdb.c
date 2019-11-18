@@ -30,6 +30,10 @@
 #define CDB_MEMORY_INDEX_ON (0)
 #endif
 
+#ifndef CDB_UNSAFE_SEEKS /* sets seeking behavior which has a performance/correctness trade-off */
+#define CDB_UNSAFE_SEEKS (1) /* 0 = unsafe for all, 1 = unsafe for cdb_add, 2 = unsafe for cdb_foreach */
+#endif
+
 #define BUILD_BUG_ON(condition)   ((void)sizeof(char[1 - 2*!!(condition)]))
 #define implies(P, Q)             assert(!(P) || (Q))
 #define MIN(X, Y)                 ((X) < (Y) ? (X) : (Y))
@@ -68,9 +72,9 @@ typedef struct {
 } cdb_hash_table_t; /* secondary hash table structure */
 
 struct cdb { /* constant database handle: for all your querying needs! */
-	cdb_file_operators_t ops; /* custom file/flash operators */
-	cdb_allocator_t a;     /* custom memory allocator routine */
+	cdb_callbacks_t ops; /* custom file/flash operators */
 	void *file;            /* database handle */
+	void *arena;           /* arena allocator */
 	cdb_word_t file_start, /* start position of structures in file */
 	       file_end,       /* end position of database in file, if known, zero otherwise */
 	       hash_start;     /* start of secondary hash tables near end of file, if known, zero otherwise */
@@ -87,14 +91,17 @@ struct cdb { /* constant database handle: for all your querying needs! */
  * safe allocator would return a pointer to a statically declared variable and
  * mark it as being used. */
 
-uint32_t cdb_get_version(void) {
+int cdb_get_version(unsigned long *version) {
 	BUILD_BUG_ON(CDB_SIZE != 16 && CDB_SIZE != 32 && CDB_SIZE != 64);
 	BUILD_BUG_ON((sizeof (cdb_word_t) * CHAR_BIT) != CDB_SIZE);
+	assert(version);
 	unsigned long spec = CDB_SIZE >> 4; /* Lowest three bits = size */
 	spec |= CDB_TESTS_ON        << 4;
 	spec |= CDB_WRITE_ON        << 5;
 	spec |= CDB_MEMORY_INDEX_ON << 6;
-	return (spec << 24) | CDB_VERSION;
+	spec |= !!CDB_UNSAFE_SEEKS  << 7; /* Can tell if unsafe or not */
+	*version = (spec << 24) | CDB_VERSION;
+	return CDB_VERSION == 0 ? CDB_ERROR_E : CDB_OK_E;
 }
 
 /* A function for resolving an error code into a (constant and static) string
@@ -111,10 +118,6 @@ static uint32_t djb_hash(const uint8_t *s, const size_t length) {
 	for (cdb_word_t i = 0; i < length; i++)
 		h = ((h << 5ul) + h) ^ s[i]; /* (h * 33) xor c */
 	return h;
-}
-
-uint32_t cdb_hash(const void *data, const size_t length) {
-	return djb_hash(data, length);
 }
 
 static inline int cdb_status(cdb_t *cdb) {
@@ -144,16 +147,30 @@ static inline int cdb_overflow_check(cdb_t *cdb, const int fail) {
 	return cdb_error(cdb, fail ? CDB_ERROR_OVERFLOW_E : CDB_OK_E);
 }
 
+static void cdb_assert(cdb_t *cdb) {
+	assert(cdb);
+	implies(cdb->file_end   != 0, cdb->file_end   > cdb->file_start);
+	implies(cdb->hash_start != 0, cdb->hash_start > cdb->file_start);
+	assert(cdb->ops.allocator);
+	assert(cdb->ops.read);
+	assert(cdb->ops.open);
+	assert(cdb->ops.close);
+	assert(cdb->ops.seek);
+	implies(cdb->create, cdb->ops.write);
+	/*assert(cdb->error == 0);*/
+}
+
 static inline int cdb_free(cdb_t *cdb, void *p) {
 	assert(cdb);
 	if (!p)
 		return 0;
-	return cdb_error(cdb, cdb->a.free(cdb->a.arena, p) < 0 ? CDB_ERROR_FREE_E : CDB_OK_E);
+	(void)cdb->ops.allocator(cdb->arena, p, 0, 0);
+	return 0;
 }
 
 static inline void *cdb_allocate(cdb_t *cdb, const size_t length) {
 	assert(cdb);
-	void *r = cdb->a.malloc(cdb->a.arena, length);
+	void *r = cdb->ops.allocator(cdb->arena, NULL, 0, length);
 	if (length != 0 && r == NULL)
 		(void)cdb_error(cdb, CDB_ERROR_ALLOCATE_E);
 	return r ? memset(r, 0, length) : NULL;
@@ -161,14 +178,16 @@ static inline void *cdb_allocate(cdb_t *cdb, const size_t length) {
 
 static inline void *cdb_reallocate(cdb_t *cdb, void *pointer, const size_t length) {
 	assert(cdb);
-	void *r = cdb->a.realloc(cdb->a.arena, pointer, length);
+	void *r = cdb->ops.allocator(cdb->arena, pointer, 0, length);
 	if (length != 0 && r == NULL)
 		(void)cdb_error(cdb, CDB_ERROR_ALLOCATE_E);
 	return r;
 }
 
-int cdb_seek(cdb_t *cdb, const cdb_word_t position, const int whence) {
-	assert(cdb);
+/* NB. A seek can cause buffers to be flushed, which generally degrades
+ * performance quite a lot */
+static int cdb_seek_internal(cdb_t *cdb, const cdb_word_t position, const int whence) {
+	cdb_assert(cdb);
 	if (cdb->error)
 		return -1;
 	if (cdb->opened && cdb->create == 0 && whence == CDB_SEEK_START) /* other seek methods not checked */
@@ -178,18 +197,32 @@ int cdb_seek(cdb_t *cdb, const cdb_word_t position, const int whence) {
 	return cdb_error(cdb, r < 0 ? CDB_ERROR_SEEK_E : CDB_OK_E);
 }
 
-cdb_word_t cdb_read(cdb_t *cdb, void *buf, cdb_word_t length) {
-	assert(cdb);
+int cdb_seek(cdb_t *cdb, const cdb_word_t position, const int whence) {
+	cdb_assert(cdb);
+	if (cdb_error(cdb, cdb->create != 0 ? CDB_ERROR_MODE_E : 0))
+		return 0;
+	return cdb_seek_internal(cdb, position, whence);
+}
+
+static cdb_word_t cdb_read_internal(cdb_t *cdb, void *buf, cdb_word_t length) {
+	cdb_assert(cdb);
 	assert(buf);
-	if (cdb->error)
+	if (cdb_error(cdb, cdb->create != 0 ? CDB_ERROR_MODE_E : 0))
 		return 0;
 	return cdb->ops.read(cdb->file, buf, length);
+}
+
+int cdb_read(cdb_t *cdb, void *buf, cdb_word_t length) {
+	cdb_assert(cdb);
+	const cdb_word_t r = cdb_read_internal(cdb, buf, length);
+	return cdb_error(cdb, r != length ? CDB_ERROR_READ_E : 0);
 }
 
 static cdb_word_t cdb_write(cdb_t *cdb, void *buf, size_t length) {
 	assert(cdb);
 	assert(buf);
-	if (cdb->error)
+	cdb_assert(cdb);
+	if (cdb_error(cdb, cdb->create == 0 ? CDB_ERROR_MODE_E : 0))
 		return 0;
 	return cdb->ops.write(cdb->file, buf, length);
 }
@@ -213,7 +246,7 @@ int cdb_read_word_pair(cdb_t *cdb, cdb_word_t *w1, cdb_word_t *w2) {
 	assert(w1);
 	assert(w2);
 	uint8_t b[2ul * sizeof(cdb_word_t)];
-	const long r = cdb_read(cdb, b, sizeof b);
+	const long r = cdb_read_internal(cdb, b, sizeof b);
 	if (r != sizeof b)
 		return -1;
 	*w1 = cdb_unpack(b);
@@ -249,13 +282,13 @@ static int cdb_free_resources(cdb_t *cdb) {
 		cdb->ops.close(cdb->file);
 	cdb->file = NULL;
 	cdb->opened = 0;
-	int r1 = 0;
+	int r = 0;
 	for (size_t i = 0; cdb->create && i < BUCKETS; i++)
 		if (cdb_hash_free(cdb, &cdb->table1[i]) < 0)
-			r1 = -1;
+			r = -1;
 	(void)cdb_error(cdb, CDB_ERROR_E);
-	const int r2 = cdb->a.free(cdb->a.arena, cdb);
-	return r1 < 0 || r2 < 0 ? -1 : 0;
+	(void)cdb->ops.allocator(cdb->arena, cdb, 0, 0);
+	return r;
 }
 
 static inline int cdb_finalize(cdb_t *cdb) { /* write hash tables to disk */
@@ -270,7 +303,7 @@ static inline int cdb_finalize(cdb_t *cdb) { /* write hash tables to disk */
 	cdb_word_t *positions = cdb_allocate(cdb, mlen * sizeof *positions);
 	if (!hashes || !positions)
 		goto fail;
-	if (cdb_seek(cdb, cdb->position, CDB_SEEK_START) < 0)
+	if (cdb_seek_internal(cdb, cdb->position, CDB_SEEK_START) < 0)
 		goto fail;
 	cdb->hash_start = cdb->position;
 
@@ -318,7 +351,7 @@ static inline int cdb_finalize(cdb_t *cdb) { /* write hash tables to disk */
 		cdb->position += (length * (2ul * sizeof(cdb_word_t)));
 	}
 	cdb->file_end = cdb->position;
-	if (cdb_seek(cdb, cdb->file_start, CDB_SEEK_START) < 0)
+	if (cdb_seek_internal(cdb, cdb->file_start, CDB_SEEK_START) < 0)
 		goto fail;
 	for (size_t i = 0; i < BUCKETS; i++) { /* write initial hash table */
 		const cdb_hash_table_t * const t = &cdb->table1[i];
@@ -350,7 +383,7 @@ fail:
 	return CDB_ERROR_E;
 }
 
-int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator, const int create, const char *file) {
+int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, void *arena, const int create, const char *file) {
 	/* We could allow the word size of the CDB database {16, 32 (default) or 64}
 	 * to be configured at run time and not compile time, this has API related
 	 * consequences, the size of 'cdb_word_t' would determine maximum size that
@@ -358,14 +391,12 @@ int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator,
 	 * parameter or one of the structures passed in would need to be extended. */
 	assert(cdb);
 	assert(ops);
+	assert(ops->allocator);
 	assert(ops->read);
 	assert(ops->open);
 	assert(ops->close);
 	assert(ops->seek);
 	implies(create, ops->write);
-	assert(allocator->malloc);
-	assert(allocator->realloc);
-	assert(allocator->free);
 	/* ops->flush is optional */
 	*cdb = NULL;
 	if (create && CDB_WRITE_ON == 0)
@@ -373,12 +404,12 @@ int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator,
 	cdb_t *c = NULL;
 	const int large = CDB_MEMORY_INDEX_ON || create;
 	const size_t csz = (sizeof *c) + (large * sizeof c->table1[0] * BUCKETS);
-	c = allocator->malloc(allocator->arena, csz);
+	c = ops->allocator(arena, NULL, 0, csz);
 	if (!c)
 		goto fail;
 	memset(c, 0, csz);
 	c->ops        = *ops;
-	c->a          = *allocator;
+	c->arena      = arena;
 	c->create     = create;
 	c->empty      = 1;
 	*cdb          = c;
@@ -388,7 +419,7 @@ int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator,
 		(void)cdb_error(c, CDB_ERROR_OPEN_E);
 		goto fail;
 	}
-	if (cdb_seek(c, c->file_start, CDB_SEEK_START) < 0)
+	if (cdb_seek_internal(c, c->file_start, CDB_SEEK_START) < 0)
 		goto fail;
 	if (create) {
 		for (size_t i = 0; i < BUCKETS; i++) /* write empty header */
@@ -420,7 +451,7 @@ int cdb_open(cdb_t **cdb, cdb_file_operators_t *ops, cdb_allocator_t *allocator,
 				hlen = t.header.length;
 			}
 		}
-		if (cdb_seek(c, c->file_start, CDB_SEEK_START) < 0)
+		if (cdb_seek_internal(c, c->file_start, CDB_SEEK_START) < 0)
 			goto fail;
 		c->file_end   = hpos + (hlen * (2ul * sizeof(cdb_word_t)));
 		c->hash_start = lset ? lpos : (BUCKETS * (2ul * sizeof(cdb_word_t)));
@@ -447,7 +478,7 @@ static int cdb_compare(cdb_t *cdb, const cdb_buffer_t *k1, const cdb_file_pos_t 
 	if (k1->length != k2->length)
 		return CDB_NOT_FOUND_E; /* not equal */
 	const cdb_word_t length = k1->length;
-	if (cdb_seek(cdb, k2->position, CDB_SEEK_START) < 0)
+	if (cdb_seek_internal(cdb, k2->position, CDB_SEEK_START) < 0)
 		return CDB_ERROR_E;
 	for (cdb_word_t i = 0; i < length; i += READ_BUFFER_LENGTH) {
 		/* Note that making this buffer larger may not make things faster - if
@@ -456,7 +487,7 @@ static int cdb_compare(cdb_t *cdb, const cdb_buffer_t *k1, const cdb_file_pos_t 
 		uint8_t kbuf[READ_BUFFER_LENGTH];
 		BUILD_BUG_ON(sizeof kbuf != READ_BUFFER_LENGTH);
 		const cdb_word_t rl = MIN((cdb_word_t)sizeof kbuf, (cdb_word_t)length - i);
-		if (cdb_read(cdb, kbuf, rl) != rl)
+		if (cdb_read_internal(cdb, kbuf, rl) != rl)
 			return CDB_ERROR_E;
 		if (memcmp(k1->buffer + i, kbuf, rl))
 			return CDB_NOT_FOUND_E;
@@ -488,7 +519,7 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 		pos = t->header.position;
 		num = t->header.length;
 	} else {
-		if (cdb_seek(cdb, cdb->file_start + ((h % BUCKETS) * (2ul * sizeof(cdb_word_t))), CDB_SEEK_START) < 0)
+		if (cdb_seek_internal(cdb, cdb->file_start + ((h % BUCKETS) * (2ul * sizeof(cdb_word_t))), CDB_SEEK_START) < 0)
 			goto fail;
 		if (cdb_read_word_pair(cdb, &pos, &num) < 0)
 			goto fail;
@@ -502,7 +533,7 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 		const cdb_word_t seekpos = pos + (((start + i) % num) * (2ul * sizeof(cdb_word_t)));
 		if (seekpos < pos || seekpos > cdb->file_end)
 			goto fail;
-		if (cdb_seek(cdb, seekpos, CDB_SEEK_START) < 0)
+		if (cdb_seek_internal(cdb, seekpos, CDB_SEEK_START) < 0)
 			goto fail;
 		cdb_word_t h1 = 0, p1 = 0;
 		if (cdb_read_word_pair(cdb, &h1, &p1) < 0)
@@ -516,7 +547,7 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 		if (cdb_hash_check(cdb, (h1 & 0xFFul) != (h & 0xFFul)) < 0) /* buckets bits should be the same */
 			goto fail;
 		if (h1 == h) { /* possible match */
-			if (cdb_seek(cdb, p1, CDB_SEEK_START) < 0)
+			if (cdb_seek_internal(cdb, p1, CDB_SEEK_START) < 0)
 				goto fail;
 			cdb_word_t klen = 0, vlen = 0;
 			if (cdb_read_word_pair(cdb, &klen, &vlen) < 0)
@@ -589,60 +620,53 @@ int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
 	assert(cb);
 	if (cdb->error || cdb->create)
 		goto fail;
-	for (size_t i = 0; i < BUCKETS; i++) {
-		const cdb_word_t seekpos = cdb->file_start + (i * (2ul * sizeof(cdb_word_t)));
-		if (seekpos < cdb->file_start || seekpos > (BUCKETS * (2ul * sizeof (cdb_word_t))))
+	cdb_word_t pos = cdb->file_start + (256u * (2ul * sizeof (cdb_word_t)));
+	if (cdb_seek_internal(cdb, pos, CDB_SEEK_START) < 0)
+		goto fail;
+	for (;pos < cdb->hash_start;) {
+		if (CDB_UNSAFE_SEEKS >= 1)
+			if (cdb_seek_internal(cdb, pos, CDB_SEEK_START) < 0)
+				goto fail;
+		cdb_word_t klen = 0, vlen = 0;
+		if (cdb_read_word_pair(cdb, &klen, &vlen) < 0)
 			goto fail;
-		if (cdb_seek(cdb, seekpos, CDB_SEEK_START) < 0)
+		const cdb_file_pos_t key   = { .length = klen, .position = pos + (2ul * sizeof(cdb_word_t)), };
+		const cdb_file_pos_t value = { .length = vlen, .position = pos + (2ul * sizeof(cdb_word_t)) + klen, };
+		if (cdb_bound_check(cdb, value.position > cdb->hash_start) < 0)
 			goto fail;
-		cdb_word_t pos = 0, num = 0;
-		if (cdb_read_word_pair(cdb, &pos, &num) < 0)
+		if (cdb_bound_check(cdb, (value.position + value.length) > cdb->hash_start) < 0)
 			goto fail;
-		if (cdb_bound_check(cdb, /*pos < cdb->hash_start ||*/ pos > cdb->file_end) < 0)
+		if (cb(cdb, &key, &value, param) < 0)
 			goto fail;
-		for (size_t j = 0; j < num; j++) {
-			if (cdb_seek(cdb, pos + (j * (2ul * sizeof(cdb_word_t))), CDB_SEEK_START) < 0)
-				goto fail;
-			cdb_word_t h1 = 0, p1 = 0;
-			if (cdb_read_word_pair(cdb, &h1, &p1) < 0)
-				goto fail;
-			if (p1 == 0)
-				continue;
-			if (cdb_hash_check(cdb, (h1 & 0xFFul) != i) < 0)
-				goto fail;
-			if (cdb_bound_check(cdb, (p1 > cdb->hash_start)) < 0)
-				goto fail;
-			if (cdb_seek(cdb, p1, CDB_SEEK_START) < 0)
-				goto fail;
-			cdb_word_t klen = 0, vlen = 0;
-			if (cdb_read_word_pair(cdb, &klen, &vlen) < 0)
-				goto fail;
-			const cdb_file_pos_t key   = { .length = klen, .position = p1 + (2ul * sizeof(cdb_word_t)), };
-		       	const cdb_file_pos_t value = { .length = vlen, .position = p1 + (2ul * sizeof(cdb_word_t)) + klen, };
-			if (cdb_bound_check(cdb, value.position > cdb->hash_start) < 0)
-				goto fail;
-			if (cdb_bound_check(cdb, (value.position + value.length) > cdb->hash_start) < 0)
-				goto fail;
-			if (cb(cdb, &key, &value, param) < 0)
-				goto fail;
-		}
+		pos = value.position + value.length;
 	}
 	return cdb_status(cdb);
 fail:
 	return cdb_error(cdb, CDB_ERROR_E);
 }
 
+static int round_up(const cdb_word_t x) {
+	cdb_word_t p = 1ul;
+	while (p < x)
+		p <<= 1ul;
+	return p;
+}
+
 static int cdb_hash_grow(cdb_t *cdb, const cdb_word_t hash, const cdb_word_t position) {
 	assert(cdb);
 	cdb_hash_table_t *t1 = &cdb->table1[hash % BUCKETS];
-	cdb_word_t *hashes = cdb_reallocate(cdb, t1->hashes, (t1->header.length + 1ul) * sizeof (*t1->hashes));
-	if (!hash)
-		return CDB_ERROR_E;
-	t1->hashes = hashes;
-	cdb_word_t *fps    = cdb_reallocate(cdb, t1->fps,    (t1->header.length + 1ul) * sizeof (*t1->fps));
-	if (!fps) {
-		(void)cdb_hash_free(cdb, t1);
-		return CDB_ERROR_E;
+	cdb_word_t *hashes = t1->hashes, *fps = t1->fps;
+	const cdb_word_t next = round_up(t1->header.length + 1ul);
+	const cdb_word_t cur  = round_up(t1->header.length);
+	if (next > cur || t1->header.length == 0) {
+		const cdb_word_t alloc = t1->header.length == 0 ? 1ul : t1->header.length * 2ul;
+		if (!(hashes = cdb_reallocate(cdb, t1->hashes, alloc * sizeof (*t1->hashes))))
+			return CDB_ERROR_E;
+		t1->hashes = hashes;
+		if (!(fps = cdb_reallocate(cdb, t1->fps, alloc * sizeof (*t1->fps)))) {
+			(void)cdb_hash_free(cdb, t1);
+			return CDB_ERROR_E;
+		}
 	}
 	t1->hashes = hashes;
 	t1->fps    = fps;
@@ -653,7 +677,7 @@ static int cdb_hash_grow(cdb_t *cdb, const cdb_word_t hash, const cdb_word_t pos
 }
 
 int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
-	assert(cdb);
+	cdb_assert(cdb);
 	assert(cdb->opened);
 	assert(key);
 	assert(value);
@@ -667,10 +691,11 @@ int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 		goto fail;
 	}
 	const cdb_word_t h = djb_hash((uint8_t*)(key->buffer), key->length);
-	if (cdb_seek(cdb, cdb->position, CDB_SEEK_START) < 0)
-		goto fail;
 	if (cdb_hash_grow(cdb, h, cdb->position) < 0)
 		goto fail;
+	if (CDB_UNSAFE_SEEKS >= 2)
+		if (cdb_seek_internal(cdb, cdb->position, CDB_SEEK_START) < 0)
+			goto fail;
 	if (cdb_write_word_pair(cdb, key->length, value->length) < 0)
 		goto fail;
 	if (cdb_write(cdb, key->buffer, key->length) != key->length)
@@ -714,9 +739,8 @@ static uint64_t xorshift128(uint64_t s[2]) {
 #define VLEN (1024ul)
 #endif
 
-int cdb_tests(cdb_file_operators_t *ops, cdb_allocator_t *allocator, const char *test_file) {
+int cdb_tests(const cdb_callbacks_t *ops, void *arena, const char *test_file) {
 	assert(ops);
-	assert(allocator);
 	assert(test_file);
 	BUILD_BUG_ON(sizeof (cdb_word_t) < 2);
 
@@ -748,7 +772,7 @@ int cdb_tests(cdb_file_operators_t *ops, cdb_allocator_t *allocator, const char 
 	uint64_t s[2] = { 0 };
 	int r = CDB_OK_E;
 
-	if (cdb_open(&cdb, ops, allocator, 1, test_file) < 0)
+	if (cdb_open(&cdb, ops, arena, 1, test_file) < 0)
 		return CDB_ERROR_E;
 	if (!(ts = cdb_allocate(cdb, (dupcnt + VECT) * (sizeof *ts))))
 		goto fail;
@@ -790,13 +814,13 @@ int cdb_tests(cdb_file_operators_t *ops, cdb_allocator_t *allocator, const char 
 	}
 
 	if (cdb_close(cdb) < 0) {
-		(void)allocator->free(allocator->arena, ts);
+		(void)ops->allocator(arena, ts, 0, 0);
 		return -1;
 	}
 	cdb = NULL;
 
-	if (cdb_open(&cdb, ops, allocator, 0, test_file) < 0) {
-		(void)allocator->free(allocator->arena, ts);
+	if (cdb_open(&cdb, ops, arena, 0, test_file) < 0) {
+		(void)ops->allocator(arena, ts, 0, 0);
 		return -1;
 	}
 
@@ -823,9 +847,9 @@ int cdb_tests(cdb_file_operators_t *ops, cdb_allocator_t *allocator, const char 
 		if (result.length != t->vlen) {
 			r = -5;
 		} else {
-			if (cdb_seek(cdb, result.position, CDB_SEEK_START) < 0)
+			if (cdb_seek_internal(cdb, result.position, CDB_SEEK_START) < 0)
 				goto fail;
-			if (cdb_read(cdb, t->result, result.length) != result.length)
+			if (cdb_read_internal(cdb, t->result, result.length) != result.length)
 				goto fail;
 			if (memcmp(t->result, t->value, result.length))
 				r = -6;
@@ -844,7 +868,7 @@ int cdb_tests(cdb_file_operators_t *ops, cdb_allocator_t *allocator, const char 
 		r = -1;
 	return r;
 fail:
-	(void)allocator->free(allocator->arena, ts);
+	(void)ops->allocator(arena, ts, 0, 0);
 	(void)cdb_close(cdb);
 	return CDB_ERROR_E;
 }
