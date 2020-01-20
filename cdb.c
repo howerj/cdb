@@ -30,10 +30,6 @@
 #define CDB_MEMORY_INDEX_ON (0)
 #endif
 
-#ifndef CDB_UNSAFE_SEEKS /* sets seeking behavior which has a performance/correctness trade-off */
-#define CDB_UNSAFE_SEEKS (1) /* 0 = unsafe for all, 1 = unsafe for cdb_add, 2 = unsafe for cdb_foreach */
-#endif
-
 #define BUILD_BUG_ON(condition)   ((void)sizeof(char[1 - 2*!!(condition)]))
 #define implies(P, Q)             assert(!(P) || (Q))
 #define MIN(X, Y)                 ((X) < (Y) ? (X) : (Y))
@@ -82,7 +78,8 @@ struct cdb { /* constant database handle: for all your querying needs! */
 	int error;             /* error, if any, any error causes database to be invalid */
 	unsigned create  :1,   /* have we opened database up in create mode? */
 		 opened  :1,   /* have we successfully opened up the database? */
-		 empty   :1;   /* is the database empty? */
+		 empty   :1,   /* is the database empty? */
+		 dirty   :1;   /* has the file position changed by an external entity? */
 	cdb_hash_table_t table1[]; /* only allocated if in create mode, BUCKETS elements are allocated */
 };
 
@@ -99,7 +96,7 @@ int cdb_get_version(unsigned long *version) {
 	spec |= CDB_TESTS_ON        << 4;
 	spec |= CDB_WRITE_ON        << 5;
 	spec |= CDB_MEMORY_INDEX_ON << 6;
-	spec |= !!CDB_UNSAFE_SEEKS  << 7; /* Can tell if unsafe or not */
+	/*spec |= 0                 << 7; */
 	*version = (spec << 24) | CDB_VERSION;
 	return CDB_VERSION == 0 ? CDB_ERROR_E : CDB_OK_E;
 }
@@ -199,6 +196,7 @@ static int cdb_seek_internal(cdb_t *cdb, const cdb_word_t position, const int wh
 
 int cdb_seek(cdb_t *cdb, const cdb_word_t position, const int whence) {
 	cdb_assert(cdb);
+	cdb->dirty = 1;
 	if (cdb_error(cdb, cdb->create != 0 ? CDB_ERROR_MODE_E : 0))
 		return 0;
 	return cdb_seek_internal(cdb, position, whence);
@@ -214,14 +212,15 @@ static cdb_word_t cdb_read_internal(cdb_t *cdb, void *buf, cdb_word_t length) {
 
 int cdb_read(cdb_t *cdb, void *buf, cdb_word_t length) {
 	cdb_assert(cdb);
+	cdb->dirty = 1;
 	const cdb_word_t r = cdb_read_internal(cdb, buf, length);
 	return cdb_error(cdb, r != length ? CDB_ERROR_READ_E : 0);
 }
 
 static cdb_word_t cdb_write(cdb_t *cdb, void *buf, size_t length) {
-	assert(cdb);
 	assert(buf);
 	cdb_assert(cdb);
+	cdb->dirty = 1;
 	if (cdb_error(cdb, cdb->create == 0 ? CDB_ERROR_MODE_E : 0))
 		return 0;
 	return cdb->ops.write(cdb->file, buf, length);
@@ -620,13 +619,13 @@ int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
 	assert(cb);
 	if (cdb->error || cdb->create)
 		goto fail;
-	cdb_word_t pos = cdb->file_start + (256u * (2ul * sizeof (cdb_word_t)));
+	cdb_word_t pos = cdb->file_start + (256ul * (2ul * sizeof (cdb_word_t)));
 	if (cdb_seek_internal(cdb, pos, CDB_SEEK_START) < 0)
 		goto fail;
 	for (;pos < cdb->hash_start;) {
-		if (CDB_UNSAFE_SEEKS >= 1)
-			if (cdb_seek_internal(cdb, pos, CDB_SEEK_START) < 0)
-				goto fail;
+		if (cdb_seek_internal(cdb, pos, CDB_SEEK_START) < 0)
+			goto fail;
+		cdb->dirty = 0;
 		cdb_word_t klen = 0, vlen = 0;
 		if (cdb_read_word_pair(cdb, &klen, &vlen) < 0)
 			goto fail;
@@ -693,9 +692,10 @@ int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 	const cdb_word_t h = djb_hash((uint8_t*)(key->buffer), key->length);
 	if (cdb_hash_grow(cdb, h, cdb->position) < 0)
 		goto fail;
-	if (CDB_UNSAFE_SEEKS >= 2)
+	if (cdb->dirty)
 		if (cdb_seek_internal(cdb, cdb->position, CDB_SEEK_START) < 0)
 			goto fail;
+	cdb->dirty = 0;
 	if (cdb_write_word_pair(cdb, key->length, value->length) < 0)
 		goto fail;
 	if (cdb_write(cdb, key->buffer, key->length) != key->length)

@@ -428,3 +428,4 @@ the [Unlicense][]. Do what thou wilt.
 [original cdb]: https://cr.yp.to/cdb.html
 [pickle]: https://github.com/howerj/pickle
 [eweb]: https://github.com/howerj/eweb
+[binary file format]: https://stackoverflow.com/questions/323604
