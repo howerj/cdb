@@ -36,14 +36,13 @@ typedef void *(*allocator_fn)(void *arena, void *ptr, size_t oldsz, size_t newsz
 struct cdb;
 typedef struct cdb cdb_t;
 
-enum { CDB_SEEK_START, CDB_SEEK_CURRENT, CDB_SEEK_END, };
 enum { CDB_RO_MODE, CDB_RW_MODE };
 
 typedef struct {
 	allocator_fn allocator;
 	cdb_word_t (*read)(void *file, void *buf, size_t length);
 	cdb_word_t (*write)(void *file, void *buf, size_t length); /* (conditionally optional) needed for creation only */
-	int (*seek)(void *file, long offset, long whence);
+	int (*seek)(void *file, long offset);
 	void *(*open)(const char *name, int mode);
 	int (*close)(void *file);
 	int (*flush)(void *file); /* (optional) called at end of successful creation */
@@ -66,7 +65,7 @@ CDB_API int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, void *arena, int c
 CDB_API int cdb_close(cdb_t *cdb);  /* free cdb, close (and write to disk if in create mode) */
 CDB_API int cdb_read(cdb_t *cdb, void *buf, cdb_word_t length); /* returns error code not length! */
 CDB_API int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value); /* do not call cdb_read and/or cdb_seek in open mode */
-CDB_API int cdb_seek(cdb_t *cdb, cdb_word_t position, int whence);
+CDB_API int cdb_seek(cdb_t *cdb, cdb_word_t position);
 CDB_API int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param);
 CDB_API int cdb_read_word_pair(cdb_t *cdb, cdb_word_t *w1, cdb_word_t *w2);
 CDB_API int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value);

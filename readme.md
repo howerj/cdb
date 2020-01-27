@@ -390,6 +390,29 @@ All of these would add complexity, and more code - making it more useful
 to some and less to others. As such, apart from bugs, the library and test
 driver programs should be considered complete.
 
+The lack of a header might be solved in creative ways as:
+
+* The integrity of the file can be checked by making sure all pointers are
+  within bounds, that key-value pairs are stored one after another and that
+  each key is in the right bucket for that hash.
+* If a file successfully passes a verification it can be identified as a valid
+  CDB file of that size, this means we would not need to store header
+  information about the file type and structure.
+
+TODO:
+* [ ] Reduce data structure sizes needed
+* [ ] Bench mark this library against other CDB libraries, some ideas for
+increasing performance include; memory mapping files, reducing system calls,
+but most importantly - benchmark the code against other libraries.
+* [ ] Keep track of file position instead of using dirty flag
+* [ ] Document a possible file format/header format based on PNG specification,
+  document design decisions and improve documentation
+* [ ] Cleanup/Simplify C API and make multiple key retrieval more efficient
+* [ ] Remove TODOs before merging 4.0 branch onto master, squashing commits if
+  needed.
+* [ ] Remove the pre-processor typedefs if possible and simplify header,
+  removed unneeded or ugly header functions
+
 # BUGS
 
 For any bugs, email the [author][]. It comes with a 'works on my machine

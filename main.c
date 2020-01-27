@@ -14,10 +14,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef USE_TMPNAM
-#define USE_TMPNAM (0)
-#endif
-
 #define UNUSED(X)      ((void)(X))
 #define MIN(X, Y)      ((X) < (Y) ? (X) : (Y))
 #define MAX(X, Y)      ((X) > (Y) ? (X) : (Y))
@@ -158,16 +154,9 @@ static cdb_word_t cdb_write_cb(void *file, void *buf, size_t length) {
 	return fwrite(buf, 1, length, (FILE*)file);
 }
 
-static int cdb_seek_cb(void *file, long offset, long whence) {
+static int cdb_seek_cb(void *file, long offset) {
 	assert(file);
-	switch (whence) {
-	case CDB_SEEK_START:   whence = SEEK_SET; break;
-	case CDB_SEEK_END:     whence = SEEK_END; break;
-	case CDB_SEEK_CURRENT: whence = SEEK_CUR; break;
-	default:
-		return -1;
-	}
-	return fseek((FILE*)file, offset, whence);
+	return fseek((FILE*)file, offset, SEEK_SET);
 }
 
 static void *cdb_open_cb(const char *name, int mode) {
@@ -191,7 +180,7 @@ static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
 	assert(cdb);
 	assert(fp);
 	assert(output);
-	if (cdb_seek(cdb, fp->position, CDB_SEEK_START) < 0)
+	if (cdb_seek(cdb, fp->position) < 0)
 		return -1;
 	char buf[IO_BUFFER_SIZE];
 	const size_t length = fp->length;
@@ -347,6 +336,7 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 			kmlen = klen;
 			key = t;
 		}
+
 		if (vmlen < vlen) {
 			char *t = realloc(value, vlen);
 			if (!t)
@@ -354,11 +344,13 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 			vmlen = vlen;
 			value = t;
 		}
+
 		if (fread(key, 1, klen, input) != klen)
 			goto fail;
 
 		if (fread(sep, 1, sizeof sep, input) != sizeof sep)
 			goto fail;
+
 		if (sep[0] != '-' || sep[1] != '>')
 			goto fail;
 
@@ -367,6 +359,7 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 
 		const cdb_buffer_t kb = { .length = klen, .buffer = key };
 		const cdb_buffer_t vb = { .length = vlen, .buffer = value };
+
 		if (cdb_add(cdb, &kb, &vb) < 0) {
 			(void)fprintf(stderr, "cdb file add failed\n");
 			//remove(file);
@@ -421,13 +414,12 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 	if (cdb_foreach(cdb, cdb_stats, &s) < 0)
 		return -1;
 
-	if (verbose) {
+	if (verbose)
 		if (fputs("Initial hash table: \n", output) < 0)
 			return -1;
-	}
 
 	for (size_t i = 0; i < 256; i++) {
-		if (cdb_seek(cdb, i * (2u * sizeof (cdb_word_t)), CDB_SEEK_START) < 0)
+		if (cdb_seek(cdb, i * (2u * sizeof (cdb_word_t))) < 0)
 			return -1;
 		cdb_word_t pos = 0, num = 0;
 		if (cdb_read_word_pair(cdb, &pos, &num) < 0)
@@ -446,7 +438,7 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 		hmax        = MAX(num, hmax);
 		if (num)
 			hmin = MIN(num, hmin);
-		if (cdb_seek(cdb, pos, CDB_SEEK_START) < 0)
+		if (cdb_seek(cdb, pos) < 0)
 			return -1;
 		for (size_t i = 0; i < num; i++) {
 			cdb_word_t h = 0, p = 0;
@@ -464,10 +456,11 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 			distances[h]++;
 		}
 	}
-	if (verbose) {
+
+	if (verbose)
 		if (fputs("\n\n", output) < 0)
 			return -1;
-	}
+
 	if (s.records == 0) {
 		s.min_key_length = 0;
 		s.min_value_length = 0;
@@ -494,6 +487,7 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 		return -1;
 	if (fputs("hash table distances:\n", output) < 0)
 		return -1;
+
 	for (size_t i = 0; i < DISTMAX; i++) {
 		const double pct = s.records ? ((double)distances[i] / (double)s.records) * 100.0 : 0.0;
 		if (fprintf(output, "\td%u%s %4lu %5.2g%%\n", (unsigned)i, i == DISTMAX - 1ul ? "+:" : ": ", distances[i], pct) < 0)
@@ -572,7 +566,7 @@ is an error.\n\
 int main(int argc, char **argv) {
 	enum { QUERY, DUMP, CREATE, STATS, KEYS, VALIDATE };
 	const char *file = NULL;
-	char tname[L_tmpnam] = { 0 }, *tmp = NULL;
+	char *tmp = NULL;
 	int mode = VALIDATE, creating = 0;
 
 	binary(stdin);
@@ -610,14 +604,6 @@ int main(int argc, char **argv) {
 		return help(stderr, argv[0]), 1;
 
 	creating = mode == CREATE;
-
-	if (USE_TMPNAM && creating && !tmp) {
-		errno = 0;
-		if (!tmpnam(tname))
-			die("temporary file name generation failed: %s", strerror(errno));
-		info("temporary file name: %s", tname);
-		tmp = tname;
-	}
 
 	cdb_t *cdb = NULL;
 	errno = 0;
