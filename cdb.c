@@ -74,14 +74,13 @@ struct cdb { /* constant database handle: for all your querying needs! */
 	cdb_word_t file_start, /* start position of structures in file */
 	       file_end,       /* end position of database in file, if known, zero otherwise */
 	       hash_start;     /* start of secondary hash tables near end of file, if known, zero otherwise */
-	/*TODO: Modify so position bounds checks are done in read/seek/write,
-	 * and so that the dirty flag is removed. */
-	cdb_word_t position;   /* key/value file pointer position (creation only) */
+	/* TODO: Having two positions is a bit ugly / inconsistent */
+	cdb_word_t wpos,       /* write key/value file pointer position (creation only) */
+		   spos;       /* read and seek position */
 	int error;             /* error, if any, any error causes database to be invalid */
 	unsigned create  :1,   /* have we opened database up in create mode? */
 		 opened  :1,   /* have we successfully opened up the database? */
-		 empty   :1,   /* is the database empty? */
-		 dirty   :1;   /* has the file position changed by an external entity? */
+		 empty   :1;   /* is the database empty? */
 	cdb_hash_table_t table1[]; /* only allocated if in create mode, BUCKETS elements are allocated */
 };
 
@@ -192,13 +191,16 @@ static int cdb_seek_internal(cdb_t *cdb, const cdb_word_t position) {
 	if (cdb->opened && cdb->create == 0)
 		if (cdb_bound_check(cdb, position < cdb->file_start || cdb->file_end < position))
 			return -1;
+	if (cdb->spos == position)
+		return cdb_error(cdb, CDB_OK_E);
 	const long r = cdb->ops.seek(cdb->file, position);
+	if (r >= 0)
+		cdb->spos = position;
 	return cdb_error(cdb, r < 0 ? CDB_ERROR_SEEK_E : CDB_OK_E);
 }
 
 int cdb_seek(cdb_t *cdb, const cdb_word_t position) {
 	cdb_assert(cdb);
-	cdb->dirty = 1;
 	if (cdb_error(cdb, cdb->create != 0 ? CDB_ERROR_MODE_E : 0))
 		return 0;
 	return cdb_seek_internal(cdb, position);
@@ -209,12 +211,16 @@ static cdb_word_t cdb_read_internal(cdb_t *cdb, void *buf, cdb_word_t length) {
 	assert(buf);
 	if (cdb_error(cdb, cdb->create != 0 ? CDB_ERROR_MODE_E : 0))
 		return 0;
-	return cdb->ops.read(cdb->file, buf, length);
+	const cdb_word_t r = cdb->ops.read(cdb->file, buf, length);
+	const cdb_word_t n = cdb->spos + r;
+	if (cdb_bound_check(cdb, n < cdb->wpos) < 0)
+		return 0;
+	cdb->spos = n;
+	return r;
 }
 
 int cdb_read(cdb_t *cdb, void *buf, cdb_word_t length) {
 	cdb_assert(cdb);
-	cdb->dirty = 1;
 	const cdb_word_t r = cdb_read_internal(cdb, buf, length);
 	return cdb_error(cdb, r != length ? CDB_ERROR_READ_E : 0);
 }
@@ -222,10 +228,14 @@ int cdb_read(cdb_t *cdb, void *buf, cdb_word_t length) {
 static cdb_word_t cdb_write(cdb_t *cdb, void *buf, size_t length) {
 	assert(buf);
 	cdb_assert(cdb);
-	cdb->dirty = 1;
 	if (cdb_error(cdb, cdb->create == 0 ? CDB_ERROR_MODE_E : 0))
 		return 0;
-	return cdb->ops.write(cdb->file, buf, length);
+	const cdb_word_t r = cdb->ops.write(cdb->file, buf, length);
+	const cdb_word_t n = cdb->wpos + r;
+	if (cdb_bound_check(cdb, n < cdb->wpos) < 0)
+		return 0;
+	cdb->wpos = n;
+	return r;
 }
 
 static inline void cdb_pack(uint8_t b[/*static (sizeof (cdb_word_t))*/], cdb_word_t w) {
@@ -304,14 +314,14 @@ static inline int cdb_finalize(cdb_t *cdb) { /* write hash tables to disk */
 	cdb_word_t *positions = cdb_allocate(cdb, mlen * sizeof *positions);
 	if (!hashes || !positions)
 		goto fail;
-	if (cdb_seek_internal(cdb, cdb->position) < 0)
+	if (cdb_seek_internal(cdb, cdb->wpos) < 0)
 		goto fail;
-	cdb->hash_start = cdb->position;
+	cdb->hash_start = cdb->wpos;
 
 	for (size_t i = 0; i < BUCKETS; i++) { /* write tables at end of file */
 		cdb_hash_table_t *t = &cdb->table1[i];
 		const cdb_word_t length = t->header.length * 2ul;
-		t->header.position = cdb->position; /* needs to be set */
+		t->header.position = cdb->wpos; /* needs to be set */
 		if (length == 0)
 			continue;
 		if (cdb_bound_check(cdb, length < t->header.length) < 0)
@@ -349,10 +359,8 @@ static inline int cdb_finalize(cdb_t *cdb) { /* write hash tables to disk */
 		for (cdb_word_t j = 0; j < length; j++)
 			if (cdb_write_word_pair(cdb, hashes[j], positions[j]) < 0)
 				goto fail;
-	
-		cdb->position += (length * (2ul * sizeof(cdb_word_t)));
 	}
-	cdb->file_end = cdb->position;
+	cdb->file_end = cdb->wpos;
 	if (cdb_seek_internal(cdb, cdb->file_start) < 0)
 		goto fail;
 	for (size_t i = 0; i < BUCKETS; i++) { /* write initial hash table */
@@ -464,7 +472,6 @@ int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, void *arena, const int cre
 		if (cdb_overflow_check(c, c->file_end < hpos) < 0)
 			goto fail;
 	}
-	c->position = c->file_start + (BUCKETS * (2ul * sizeof(cdb_word_t)));
 	c->opened = 1;
 	return CDB_OK_E;
 fail:
@@ -616,6 +623,9 @@ int cdb_get_count(cdb_t *cdb, const cdb_buffer_t *key, long *count) {
 	return r;
 }
 
+/* TODO: Make another 'cdb_foreach' for validation that checks each key belongs
+ * in the bucket it should? This could be done by passing in the hash to the
+ * callback... */
 int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
 	assert(cdb);
 	assert(cdb->opened);
@@ -628,7 +638,6 @@ int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
 	for (;pos < cdb->hash_start;) {
 		if (cdb_seek_internal(cdb, pos) < 0)
 			goto fail;
-		cdb->dirty = 0; /* TODO: check against stored file position in cdb_seek_internal instead of by dirty flag */
 		cdb_word_t klen = 0, vlen = 0;
 		if (cdb_read_word_pair(cdb, &klen, &vlen) < 0)
 			goto fail;
@@ -683,7 +692,7 @@ int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 	assert(cdb->opened);
 	assert(key);
 	assert(value);
-	assert(cdb->position >= cdb->file_start);
+	assert(cdb->wpos >= cdb->file_start);
 	if (CDB_WRITE_ON == 0)
 		return cdb_error(cdb, CDB_ERROR_DISABLED_E);
 	if (cdb->error)
@@ -693,24 +702,18 @@ int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 		goto fail;
 	}
 	const cdb_word_t h = djb_hash((uint8_t*)(key->buffer), key->length);
-	if (cdb_hash_grow(cdb, h, cdb->position) < 0)
+	if (cdb_hash_grow(cdb, h, cdb->wpos) < 0)
 		goto fail;
-	if (cdb->dirty)
-		if (cdb_seek_internal(cdb, cdb->position) < 0)
-			goto fail;
-	cdb->dirty = 0;
+	if (cdb_seek_internal(cdb, cdb->wpos) < 0)
+		goto fail;
 	if (cdb_write_word_pair(cdb, key->length, value->length) < 0)
 		goto fail;
 	if (cdb_write(cdb, key->buffer, key->length) != key->length)
 		goto fail;
 	if (cdb_write(cdb, value->buffer, value->length) != value->length)
 		goto fail;
-	const cdb_word_t add = key->length + value->length + (2ul * sizeof (cdb_word_t));
-	if (cdb_overflow_check(cdb, key->length + value->length < key->length) < 0)
+	if (cdb_overflow_check(cdb, (key->length + value->length) < key->length) < 0)
 		goto fail;
-	if (cdb_overflow_check(cdb, (cdb->position + add) <= cdb->position) < 0)
-		goto fail;
-	cdb->position += add;
 	cdb->empty = 0;
 	return cdb_status(cdb);
 fail:

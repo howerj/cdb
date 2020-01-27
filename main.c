@@ -164,6 +164,12 @@ static void *cdb_open_cb(const char *name, int mode) {
 	assert(mode == CDB_RO_MODE || mode == CDB_RW_MODE);
 	const char *mode_string = mode == CDB_RW_MODE ? "wb+" : "rb";
 	return fopen(name, mode_string);
+	/* TODO: dynamically allocate buffer...
+	if (!f)
+		return f;
+	static char buf[BUFSIZ];
+	setvbuf(f, buf, _IOFBF, sizeof buf);
+	return f; */
 }
 
 static int cdb_close_cb(void *file) {
@@ -304,10 +310,6 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 	assert(cdb);
 	assert(input);
 
-	char ibuf[BUFSIZ];
-	if (setvbuf(input, ibuf, _IOFBF, sizeof ibuf) < 0)
-		return -1;
-
 	int r = 0;
 	size_t kmlen = IO_BUFFER_SIZE, vmlen = IO_BUFFER_SIZE;
 	char *key = malloc(kmlen);
@@ -362,7 +364,6 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 
 		if (cdb_add(cdb, &kb, &vb) < 0) {
 			(void)fprintf(stderr, "cdb file add failed\n");
-			//remove(file);
 			goto fail;
 		}
 		const int ch1 = fgetc(input);
@@ -440,17 +441,17 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 			hmin = MIN(num, hmin);
 		if (cdb_seek(cdb, pos) < 0)
 			return -1;
-		for (size_t i = 0; i < num; i++) {
+		for (size_t j = 0; j < num; j++) {
 			cdb_word_t h = 0, p = 0;
 			if (cdb_read_word_pair(cdb, &h, &p) < 0)
 				return -1;
 			if (!p)
 				continue;
 			h = (h >> 8) % num;
-			if (h == i) {
+			if (h == j) {
 				h = 0;
 			} else {
-				h = h < i ? i - h : num - h + i;
+				h = h < j ? j - h : num - h + j;
 				h = MIN(h, DISTMAX - 1ul);
 			}
 			distances[h]++;
@@ -573,6 +574,12 @@ int main(int argc, char **argv) {
 	binary(stdout);
 	binary(stderr);
 
+	static char ibuf[BUFSIZ], obuf[BUFSIZ];
+	if (setvbuf(stdin, ibuf, _IOFBF, sizeof ibuf) < 0)
+		return -1;
+	if (setvbuf(stdout, obuf, _IOFBF, sizeof obuf) < 0)
+		return -1;
+
 	static const cdb_callbacks_t ops = {
 		.allocator = cdb_allocator_cb,
 		.read      = cdb_read_cb,
@@ -610,10 +617,11 @@ int main(int argc, char **argv) {
 	const char *name = creating && tmp ? tmp : file;
 	info("opening '%s' for %s", name, creating ? "writing" : "reading");
 
+	errno = 0;
 	if (cdb_open(&cdb, &ops, NULL, creating, name) < 0) {
-		const char *stre = strerror(errno);
-		const char *mstr = creating ? "create" : "read";
-		die("opening file '%s' in %s mode failed: %s", name, mstr, stre);
+		const char *f = errno ? strerror(errno) : "unknown";
+		const char *m = creating ? "create" : "read";
+		die("opening file '%s' in %s mode failed: %s", name, m, f);
 	}
 
 	int r = 0;
@@ -636,9 +644,9 @@ int main(int argc, char **argv) {
 
 	const int cdbe = cdb_get_error(cdb);
 	if (cdb_close(cdb) < 0)
-		die("Close/Finalize failed");
+		die("close failed");
 	if (cdbe < 0)
-		die("CDB internal error: %d", cdbe);
+		die("cdb internal error: %d", cdbe);
 
 	if (creating && tmp) {
 		info("renaming temporary file");

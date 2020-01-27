@@ -392,9 +392,10 @@ driver programs should be considered complete.
 
 The lack of a header might be solved in creative ways as:
 
-* The integrity of the file can be checked by making sure all pointers are
+* The integrity of most of the file can be checked by making sure all pointers are
   within bounds, that key-value pairs are stored one after another and that
-  each key is in the right bucket for that hash.
+  each key is in the right bucket for that hash. The only things not checked
+  would be the values (they would still have to be of the right length).
 * If a file successfully passes a verification it can be identified as a valid
   CDB file of that size, this means we would not need to store header
   information about the file type and structure.
@@ -403,7 +404,8 @@ TODO:
 * [ ] Reduce data structure sizes needed
 * [ ] Bench mark this library against other CDB libraries, some ideas for
 increasing performance include; memory mapping files, reducing system calls,
-but most importantly - benchmark the code against other libraries.
+buffering file streams, but most importantly - benchmark the code against 
+other CDB implementations.
 * [ ] Keep track of file position instead of using dirty flag
 * [ ] Document a possible file format/header format based on PNG specification,
   document design decisions and improve documentation
