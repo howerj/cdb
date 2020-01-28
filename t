@@ -34,8 +34,6 @@ EOF
 EOF
 	set +x;
 
-
-
 	t() {
 		R=$(eval "${1}");
 		if [ "${R}" != "${2}" ]; then

@@ -393,6 +393,8 @@ fail:
 	return CDB_ERROR_E;
 }
 
+/* TODO: Add a structure for configuration options (create, db size, ops,
+ * arena, ...) */
 int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, void *arena, const int create, const char *file) {
 	/* We could allow the word size of the CDB database {16, 32 (default) or 64}
 	 * to be configured at run time and not compile time, this has API related
@@ -745,6 +747,10 @@ static uint64_t xorshift128(uint64_t s[2]) { /* A few rounds of SPECK or TEA cip
 #define VLEN (1024ul)
 #endif
 
+/* TODO: Ensure duplicate keys are added in such as to trap another key that
+ * hashes to the same value in between two duplicates - test record retrieval
+ * works with this.
+ * TODO: Test verification catches corrupted CDB files */
 int cdb_tests(const cdb_callbacks_t *ops, void *arena, const char *test_file) {
 	assert(ops);
 	assert(test_file);
