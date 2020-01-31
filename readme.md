@@ -406,31 +406,19 @@ TODO:
 increasing performance include; memory mapping files, reducing system calls,
 buffering file streams, but most importantly - benchmark the code against 
 other CDB implementations.
+* [ ] Keep track of file position instead of using dirty flag
 * [ ] Document a possible file format/header format based on PNG specification,
   document design decisions and improve documentation
-* [ ] Allow hash to be user specified?
 * [ ] Cleanup/Simplify C API and make multiple key retrieval more efficient
 * [ ] Remove TODOs before merging 4.0 branch onto master, squashing commits if
   needed.
 * [ ] Remove the pre-processor typedefs if possible and simplify header,
   removed unneeded or ugly header functions
-
-# OTHER IMPLEMENTATIONS
-
-As the data structure and concept are easy to implement there are a number of
-different implementations, some of which are licensed different, are
-non-compatible, are faster, or target different languages.
-
-* MCDB, <https://github.com/gstrauss/mcdb> a fast, 64-bit, non-compatible,
-  implementation.
-* Tiny CDB <https://www.corpit.ru/mjt/tinycdb.html>
-* A C++ header only implementation of CDB <http://chokkan.org/software/cdbpp/>
-* The original <https://cr.yp.to/cdb.html>
-* A pure python version available here <http://www.unixuser.org/~euske/doc/cdbinternals/pycdb.py>
-which is very small and understandable.
-* <https://github.com/rmind/libcdb> which is a completely different database
-format, again for a constant database, but one that uses perfect hashing,
-which hash limitations and advantages.
+* [ ] Change other projects to incorporate the lessons learned in this one
+  in terms of project organization, how the makefile is structured, the C API,
+  and more.
+* [ ] Generate ctags and hide in '.git' folder. Include makefile itself in
+  list of dependencies.
 
 # BUGS
 

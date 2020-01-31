@@ -38,6 +38,13 @@
 #define BUCKETS                   (1ul << NBUCKETS)
 #define READ_BUFFER_LENGTH        (256ul)
 
+/* TODO: Lightweight assertions / logging can be accomplished by storing
+ * or printing a line number, function pointer, an perhaps a single n-bit
+ * user defined value. Decoding these values portably would be problematic,
+ * however the system would be small. Assert could also be replaced with
+ * one defined here so we have more control over it and do not bloat
+ * the library with strings so much.  */
+
 enum {
 	CDB_OK_E             =   0, /* no error */
 	CDB_NOT_FOUND_E      =   0, /* key: not-found */
@@ -61,6 +68,7 @@ typedef struct {
 	cdb_word_t length;   /* number of buckets in hash table */
 } cdb_hash_header_t; /* initial hash table structure */
 
+/* TODO: Too much data is allocated when using memory index */
 typedef struct {
 	cdb_word_t *hashes;       /* full key hashes */
 	cdb_word_t *fps;          /* file pointers */
@@ -113,6 +121,7 @@ int cdb_get_error(cdb_t *cdb) {
 static uint32_t djb_hash(const uint8_t *s, const size_t length) {
 	assert(s);
 	uint32_t h = 5381ul;
+	/* NB. Hash dependent on CDB word size at the moment...*/
 	for (cdb_word_t i = 0; i < length; i++)
 		h = ((h << 5ul) + h) ^ s[i]; /* (h * 33) xor c */
 	return h;
@@ -130,6 +139,8 @@ static inline int cdb_error(cdb_t *cdb, const int error) {
 	return cdb_status(cdb);
 }
 
+/* TODO: Check if all overflow checks are needed, or if we can just
+ * perform them in the read/write/seek functions */
 static inline int cdb_bound_check(cdb_t *cdb, const int fail) {
 	assert(cdb);
 	return cdb_error(cdb, fail ? CDB_ERROR_BOUND_E : CDB_OK_E);
@@ -182,7 +193,7 @@ static inline void *cdb_reallocate(cdb_t *cdb, void *pointer, const size_t lengt
 	return r;
 }
 
-/* NB. A seek can cause buffers to be flushed, which generally degrades
+/* NB. A seek can cause buffers to be flushed, which degrades
  * performance quite a lot */
 static int cdb_seek_internal(cdb_t *cdb, const cdb_word_t position) {
 	cdb_assert(cdb);
@@ -213,7 +224,7 @@ static cdb_word_t cdb_read_internal(cdb_t *cdb, void *buf, cdb_word_t length) {
 		return 0;
 	const cdb_word_t r = cdb->ops.read(cdb->file, buf, length);
 	const cdb_word_t n = cdb->spos + r;
-	if (cdb_bound_check(cdb, n < cdb->wpos) < 0)
+	if (cdb_overflow_check(cdb, n < cdb->wpos) < 0)
 		return 0;
 	cdb->spos = n;
 	return r;
@@ -232,7 +243,7 @@ static cdb_word_t cdb_write(cdb_t *cdb, void *buf, size_t length) {
 		return 0;
 	const cdb_word_t r = cdb->ops.write(cdb->file, buf, length);
 	const cdb_word_t n = cdb->wpos + r;
-	if (cdb_bound_check(cdb, n < cdb->wpos) < 0)
+	if (cdb_overflow_check(cdb, n < cdb->wpos) < 0)
 		return 0;
 	cdb->wpos = n;
 	return r;
@@ -393,8 +404,6 @@ fail:
 	return CDB_ERROR_E;
 }
 
-/* TODO: Add a structure for configuration options (create, db size, ops,
- * arena, ...) */
 int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, void *arena, const int create, const char *file) {
 	/* We could allow the word size of the CDB database {16, 32 (default) or 64}
 	 * to be configured at run time and not compile time, this has API related
@@ -568,10 +577,11 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 				goto fail;
 			if (cdb_bound_check(cdb, k2.position + klen > cdb->hash_start) < 0)
 				goto fail;
-			const int cr = cdb_compare(cdb, key, &k2);
-			if (cr < 0)
+			const int comp = cdb_compare(cdb, key, &k2);
+			const int found = comp > 0;
+			if (comp < 0)
 				goto fail;
-			if (cr > 0 && recno == wanted) { /* found key, correct record? */
+			if (found && recno == wanted) { /* found key, correct record? */
 				cdb_file_pos_t v2 = { .length = vlen, .position = k2.position + klen };
 				if (cdb_overflow_check(cdb, (v2.position + v2.length) < v2.position) < 0)
 					goto fail;
@@ -583,7 +593,7 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 				*value = v2;
 				return cdb_status(cdb) < 0 ? CDB_ERROR_E : CDB_FOUND_E;
 			}
-			recno++;
+			recno += found; /* TODO: Test collisions resolve to correct address */
 		}
 	}
 	*record = recno;
@@ -747,10 +757,6 @@ static uint64_t xorshift128(uint64_t s[2]) { /* A few rounds of SPECK or TEA cip
 #define VLEN (1024ul)
 #endif
 
-/* TODO: Ensure duplicate keys are added in such as to trap another key that
- * hashes to the same value in between two duplicates - test record retrieval
- * works with this.
- * TODO: Test verification catches corrupted CDB files */
 int cdb_tests(const cdb_callbacks_t *ops, void *arena, const char *test_file) {
 	assert(ops);
 	assert(test_file);

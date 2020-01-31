@@ -1,6 +1,6 @@
 # CDB makefile - default target should build everything
 #
-VERSION =0x040001ul
+VERSION =0x040002ul
 CFLAGS  =-Wall -Wextra -fPIC -std=c99 -O2 -pedantic -g -fwrapv -DCDB_VERSION="${VERSION}" ${DEFINES} ${EXTRA} 
 TARGET  =cdb
 AR      =ar
@@ -18,9 +18,9 @@ endif
 
 all: ${TARGET}
 
-cdb.o: cdb.c cdb.h
+cdb.o: cdb.c cdb.h makefile
 
-main.o: main.c cdb.h
+main.o: main.c cdb.h makefile
 
 lib${TARGET}.a: ${TARGET}.o ${TARGET}.h
 	${AR} ${ARFLAGS} $@ $<

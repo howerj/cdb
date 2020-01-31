@@ -34,6 +34,8 @@ EOF
 EOF
 	set +x;
 
+
+
 	t() {
 		R=$(eval "${1}");
 		if [ "${R}" != "${2}" ]; then
@@ -101,8 +103,6 @@ EOF
 
 	set +x;
 
-	# # make clean
-	#
 	# # Extra stuff, not used yet as it needs speeding up. A PRNG could
 	# # be made in pure sh to do so, otherwise we are shelling out too much.
 	#
