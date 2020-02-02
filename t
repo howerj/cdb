@@ -1,16 +1,59 @@
 #!/bin/sh
 # CDB Test Script
+#
 RANDOMSRC=${RANDOMSRC:-/dev/urandom};
 TESTDB=test.cdb;
 EMPTYDB=empty.cdb;
 FAIL=0;
+PERFORMANCE=${PERFORMANCE:-test.cdb};
 #CDB=${CDB:-cdb};
 
-for CDB in cdb cdb16 cdb32 cdb64; do
+performance () {
+	set -eux;
+	make test;
 
-	set -x;
-	set -e;
-	set -u;
+	time -p ./cdb   -d "${PERFORMANCE}" > /dev/null;
+	time -p cdb     -d "${PERFORMANCE}" > /dev/null;
+	time -p cdbdump  < "${PERFORMANCE}" > /dev/null;
+
+	./cdb   -d "${PERFORMANCE}" > 1.txt;
+	cdb     -d "${PERFORMANCE}" > 2.txt;
+	cdbdump  < "${PERFORMANCE}" > 3.txt;
+
+	time -p ./cdb -c 1.cdb          < 1.txt;
+	time -p cdb   -c 2.cdb          < 2.txt;
+	time -p cdbmake  3.cdb temp.cdb < 3.txt;
+}
+
+usage () {
+HELP=$(cat <<EOF
+cdb test and performance suite
+
+By default this program will run a series of tests on the various
+versions of the CDB.
+
+-h	print this help and exit successfully	
+-p	do performance tests instead on default file
+-P #	set CDB file for performance tests and run tests
+
+This program will return zero and non-zero on failure.
+EOF
+);
+	echo "${HELP}"
+}
+
+while getopts 'hpP:' opt
+do
+	case "${opt}" in
+		h) usage; exit 0; ;;
+		p) performance; exit 0; ;;
+		P) PERFORMANCE="${OPTARG}"; performance; exit 0; ;;
+		?) usage; exit 1; ;;
+	esac
+done
+
+for CDB in cdb cdb16 cdb32 cdb64; do
+	set -eux;
 
 	make ${CDB};
 

@@ -47,6 +47,12 @@ typedef struct {
 	int  init;   /* internal use: initialized or not */
 } cdb_getopt_t;      /* getopt clone; with a few modifications */
 
+typedef struct {
+	FILE *handle;
+	size_t length;
+	char buffer[];
+} file_t;
+
 static unsigned verbose = 0;
 
 static void info(const char *fmt, ...) {
@@ -145,41 +151,51 @@ static void *cdb_allocator_cb(void *arena, void *ptr, const size_t oldsz, const 
 static cdb_word_t cdb_read_cb(void *file, void *buf, size_t length) {
 	assert(file);
 	assert(buf);
-	return fread(buf, 1, length, (FILE*)file);
+	return fread(buf, 1, length, ((file_t*)file)->handle);
 }
 
 static cdb_word_t cdb_write_cb(void *file, void *buf, size_t length) {
 	assert(file);
 	assert(buf);
-	return fwrite(buf, 1, length, (FILE*)file);
+	return fwrite(buf, 1, length, ((file_t*)file)->handle);
 }
 
 static int cdb_seek_cb(void *file, long offset) {
 	assert(file);
-	return fseek((FILE*)file, offset, SEEK_SET);
+	return fseek(((file_t*)file)->handle, offset, SEEK_SET);
 }
 
 static void *cdb_open_cb(const char *name, int mode) {
 	assert(name);
 	assert(mode == CDB_RO_MODE || mode == CDB_RW_MODE);
 	const char *mode_string = mode == CDB_RW_MODE ? "wb+" : "rb";
-	return fopen(name, mode_string);
-	/* TODO: dynamically allocate buffer...
+	FILE *f = fopen(name, mode_string);
 	if (!f)
 		return f;
-	static char buf[BUFSIZ];
-	setvbuf(f, buf, _IOFBF, sizeof buf);
-	return f; */
+	const size_t length = BUFSIZ;
+	file_t *fb = malloc(sizeof (*f) + length);
+	if (!fb) {
+		fclose(f);
+		return NULL;
+	}
+	fb->handle = f;
+	fb->length = length;
+	if (setvbuf(f, fb->buffer, _IOFBF, fb->length) < 0) {
+		fclose(f);
+		free(fb);
+		return NULL;
+	}
+	return fb;
 }
 
 static int cdb_close_cb(void *file) {
 	assert(file);
-	return fclose((FILE*)file);
+	return fclose(((file_t*)file)->handle);
 }
 
 static int cdb_flush_cb(void *file) {
 	assert(file);
-	return fflush((FILE*)file);
+	return fflush(((file_t*)file)->handle);
 }
 
 static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
@@ -582,6 +598,8 @@ int main(int argc, char **argv) {
 
 	static const cdb_callbacks_t ops = {
 		.allocator = cdb_allocator_cb,
+		.hash      = NULL,
+		.compare   = NULL,
 		.read      = cdb_read_cb,
 		.write     = cdb_write_cb,
 		.seek      = cdb_seek_cb,

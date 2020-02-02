@@ -89,6 +89,7 @@ struct cdb { /* constant database handle: for all your querying needs! */
 	unsigned create  :1,   /* have we opened database up in create mode? */
 		 opened  :1,   /* have we successfully opened up the database? */
 		 empty   :1;   /* is the database empty? */
+
 	cdb_hash_table_t table1[]; /* only allocated if in create mode, BUCKETS elements are allocated */
 };
 
@@ -118,13 +119,24 @@ int cdb_get_error(cdb_t *cdb) {
 }
 
 /* This is not 'djb2' hash - the character is xor'ed in and not added. */
-static uint32_t djb_hash(const uint8_t *s, const size_t length) {
+static inline uint32_t djb_hash(const uint8_t *s, const size_t length) {
 	assert(s);
 	uint32_t h = 5381ul;
 	/* NB. Hash dependent on CDB word size at the moment...*/
-	for (cdb_word_t i = 0; i < length; i++)
+	for (size_t i = 0; i < length; i++)
 		h = ((h << 5ul) + h) ^ s[i]; /* (h * 33) xor c */
 	return h;
+}
+
+static int cdb_memory_compare(const void *a, const void *b, size_t length) {
+	assert(a);
+	assert(b);
+	return memcmp(a, b, length);
+}
+
+static cdb_word_t cdb_hash(const uint8_t *s, const size_t length) {
+	assert(s);
+	return djb_hash(s, length);
 }
 
 static inline int cdb_status(cdb_t *cdb) {
@@ -429,13 +441,15 @@ int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, void *arena, const int cre
 	if (!c)
 		goto fail;
 	memset(c, 0, csz);
-	c->ops        = *ops;
-	c->arena      = arena;
-	c->create     = create;
-	c->empty      = 1;
-	*cdb          = c;
-	c->file       = c->ops.open(file, create ? CDB_RW_MODE : CDB_RO_MODE);
-	c->file_start = FILE_START;
+	c->ops         = *ops;
+	c->ops.hash    = c->ops.hash    ? c->ops.hash    : cdb_hash;
+	c->ops.compare = c->ops.compare ? c->ops.compare : cdb_memory_compare;
+	c->arena       = arena;
+	c->create      = create;
+	c->empty       = 1;
+	*cdb           = c;
+	c->file_start  = FILE_START;
+	c->file        = c->ops.open(file, create ? CDB_RW_MODE : CDB_RO_MODE);
 	if (!(c->file)) {
 		(void)cdb_error(c, CDB_ERROR_OPEN_E);
 		goto fail;
@@ -493,6 +507,7 @@ fail:
 /* returns: -1 = error, 0 = not equal, 1 = equal */
 static int cdb_compare(cdb_t *cdb, const cdb_buffer_t *k1, const cdb_file_pos_t *k2) {
 	assert(cdb);
+	assert(cdb->ops.compare);
 	assert(k1);
 	assert(k2);
 	if (k1->length != k2->length)
@@ -509,7 +524,7 @@ static int cdb_compare(cdb_t *cdb, const cdb_buffer_t *k1, const cdb_file_pos_t 
 		const cdb_word_t rl = MIN((cdb_word_t)sizeof kbuf, (cdb_word_t)length - i);
 		if (cdb_read_internal(cdb, kbuf, rl) != rl)
 			return CDB_ERROR_E;
-		if (memcmp(k1->buffer + i, kbuf, rl))
+		if (cdb->ops.compare(k1->buffer + i, kbuf, rl))
 			return CDB_NOT_FOUND_E;
 	}
 	return CDB_FOUND_E; /* equal */
@@ -518,6 +533,7 @@ static int cdb_compare(cdb_t *cdb, const cdb_buffer_t *k1, const cdb_file_pos_t 
 static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, long *record) {
 	assert(cdb);
 	assert(cdb->opened);
+	assert(cdb->ops.hash);
 	assert(key);
 	assert(value);
 	assert(record);
@@ -531,7 +547,7 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 		goto fail;
 	}
 	/* locate key in first table */
-	const cdb_word_t h = djb_hash((uint8_t *)(key->buffer), key->length);
+	const cdb_word_t h = cdb->ops.hash((uint8_t *)(key->buffer), key->length);
 	cdb_word_t pos = 0, num = 0;
 
 	if (CDB_MEMORY_INDEX_ON) { /* use more memory (~4KiB) to speed up first match */
@@ -702,6 +718,7 @@ static int cdb_hash_grow(cdb_t *cdb, const cdb_word_t hash, const cdb_word_t pos
 int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 	cdb_assert(cdb);
 	assert(cdb->opened);
+	assert(cdb->ops.hash);
 	assert(key);
 	assert(value);
 	assert(cdb->wpos >= cdb->file_start);
@@ -713,7 +730,7 @@ int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 		(void)cdb_error(cdb, CDB_ERROR_MODE_E);
 		goto fail;
 	}
-	const cdb_word_t h = djb_hash((uint8_t*)(key->buffer), key->length);
+	const cdb_word_t h = cdb->ops.hash((uint8_t*)(key->buffer), key->length);
 	if (cdb_hash_grow(cdb, h, cdb->wpos) < 0)
 		goto fail;
 	if (cdb_seek_internal(cdb, cdb->wpos) < 0)
@@ -726,6 +743,7 @@ int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 		goto fail;
 	if (cdb_overflow_check(cdb, (key->length + value->length) < key->length) < 0)
 		goto fail;
+	/* TODO: put 'cdb->spos = cdb->wpos;' here to fix performance bug */
 	cdb->empty = 0;
 	return cdb_status(cdb);
 fail:
@@ -757,6 +775,8 @@ static uint64_t xorshift128(uint64_t s[2]) { /* A few rounds of SPECK or TEA cip
 #define VLEN (1024ul)
 #endif
 
+/* TODO: Do minimal testing of corrupt images as well to check they are 
+ * correctly diagnosed as being invalid. */
 int cdb_tests(const cdb_callbacks_t *ops, void *arena, const char *test_file) {
 	assert(ops);
 	assert(test_file);
@@ -774,14 +794,24 @@ int cdb_tests(const cdb_callbacks_t *ops, void *arena, const char *test_file) {
 	typedef struct { char *key, *value; } test_duplicate_t;
 
 	static const test_duplicate_t dups[] = { /* add known duplicates */
-		{ "ALPHA", "BRAVO",   },
-		{ "ALPHA", "CHARLIE", },
-		{ "ALPHA", "DELTA",   },
-		{ "1234",  "5678",    },
-		{ "1234",  "9ABC",    },
-		{ "",      "",        },
-		{ "",      "X",       },
-		{ "",      "",        },
+		{ "ALPHA",    "BRAVO",     },
+		{ "ALPHA",    "CHARLIE",   },
+		{ "ALPHA",    "DELTA",     },
+		{ "FSF",      "Collide-1", },
+		{ "Aug",      "Collide-2", },
+		{ "FSF",      "Collide-3", },
+		{ "Aug",      "Collide-4", },
+		{ "revolves", "Collide-1", },
+		{ "revolt's", "Collide-2", },
+		{ "revolt's", "Collide-3", },
+		{ "revolt's", "Collide-4", },
+		{ "revolves", "Collide-5", },
+		{ "revolves", "Collide-6", },
+		{ "1234",     "5678",      },
+		{ "1234",     "9ABC",      },
+		{ "",         "",          },
+		{ "",         "X",         },
+		{ "",         "",          },
 	};
 	const size_t dupcnt = sizeof (dups) / sizeof (dups[0]);
 

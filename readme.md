@@ -406,7 +406,6 @@ TODO:
 increasing performance include; memory mapping files, reducing system calls,
 buffering file streams, but most importantly - benchmark the code against 
 other CDB implementations.
-* [ ] Keep track of file position instead of using dirty flag
 * [ ] Document a possible file format/header format based on PNG specification,
   document design decisions and improve documentation
 * [ ] Cleanup/Simplify C API and make multiple key retrieval more efficient
@@ -419,6 +418,19 @@ other CDB implementations.
   and more.
 * [ ] Generate ctags and hide in '.git' folder. Include makefile itself in
   list of dependencies.
+* [ ] Make a script for benchmarking this implementation against others, if
+  possible including memory usage, program size, and of course speed.
+* [ ] An option for dumping out keys and their hashes could be made, using
+  Unix utilities it would then be possible to construct the database in hash
+  value order.
+* [ ] If using CDB purely to test membership of a set then this DB places
+  a 4 byte overhead per key which is unneeded. This could be made into an
+  option.
+* [x] Allow custom compare and hash functions in the database, such as
+  SOUNDEX, so similar keys *collide* for a fuzzy search (a second index 
+  could be used with the original hash algorithm so we can perform an
+  exact lookup as well). Different indices could be used by specifying
+  a different offset for the initial hash table.
 
 # BUGS
 
