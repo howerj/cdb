@@ -172,7 +172,7 @@ static void *cdb_open_cb(const char *name, int mode) {
 	FILE *f = fopen(name, mode_string);
 	if (!f)
 		return f;
-	const size_t length = BUFSIZ;
+	const size_t length = 1024ul * 16ul;
 	file_t *fb = malloc(sizeof (*f) + length);
 	if (!fb) {
 		fclose(f);
@@ -190,7 +190,9 @@ static void *cdb_open_cb(const char *name, int mode) {
 
 static int cdb_close_cb(void *file) {
 	assert(file);
-	return fclose(((file_t*)file)->handle);
+	const int r = fclose(((file_t*)file)->handle);
+	free(file);
+	return r;
 }
 
 static int cdb_flush_cb(void *file) {
@@ -211,7 +213,7 @@ static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
 		assert(l <= sizeof buf);
 		if (cdb_read(cdb, buf, MIN(sizeof buf, l)) < 0)
 			return -1;
-		if (fwrite(buf, 1, l, output) != l)
+		if (fwrite(buf, 1, l, output) != l) /* TODO: Double buffered, not needed */
 			return -1;
 	}
 	return 0;
@@ -337,7 +339,7 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 		cdb_word_t klen = 0, vlen = 0;
 		char sep[2] = { 0 };
 		const int first = fgetc(input);
-		if (first == EOF)
+		if (first == EOF) /* || first == '\n' {need to handle '\r' as well}*/
 			goto end;
 		if (isspace(first))
 			continue;
@@ -389,7 +391,7 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 			goto end;
 		if (ch1 != '\r')
 			goto fail;
-		if ('\n' != fgetc(input)) {
+		if ('\n' != fgetc(input)) { /* TODO: ??? */
 		}
 	}
 fail:

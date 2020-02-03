@@ -609,7 +609,7 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 				*value = v2;
 				return cdb_status(cdb) < 0 ? CDB_ERROR_E : CDB_FOUND_E;
 			}
-			recno += found; /* TODO: Test collisions resolve to correct address */
+			recno += found;
 		}
 	}
 	*record = recno;
@@ -743,7 +743,7 @@ int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 		goto fail;
 	if (cdb_overflow_check(cdb, (key->length + value->length) < key->length) < 0)
 		goto fail;
-	/* TODO: put 'cdb->spos = cdb->wpos;' here to fix performance bug */
+	cdb->spos = cdb->wpos; /* TODO: Fix this hack */
 	cdb->empty = 0;
 	return cdb_status(cdb);
 fail:

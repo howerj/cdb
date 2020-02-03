@@ -405,7 +405,12 @@ TODO:
 * [ ] Bench mark this library against other CDB libraries, some ideas for
 increasing performance include; memory mapping files, reducing system calls,
 buffering file streams, but most importantly - benchmark the code against 
-other CDB implementations.
+other CDB implementations. Performance ideas:
+  - [ ] Avoiding double buffering with file API. There are some loops that
+  are simple copies.
+  - [ ] mmap files
+  - [ ] Doing zero copy transfers so we do not have to switch to/from kernel space
+  as much.
 * [ ] Document a possible file format/header format based on PNG specification,
   document design decisions and improve documentation
 * [ ] Cleanup/Simplify C API and make multiple key retrieval more efficient
@@ -431,6 +436,7 @@ other CDB implementations.
   could be used with the original hash algorithm so we can perform an
   exact lookup as well). Different indices could be used by specifying
   a different offset for the initial hash table.
+* [ ] Implement SOUNDEX and try to do something cool with it.
 
 # BUGS
 
