@@ -12,6 +12,10 @@ performance () {
 	set -eux;
 	make test;
 
+	time -p ./cdb -s   "${PERFORMANCE}" > /dev/null;
+	time -p cdb   -s   "${PERFORMANCE}" > /dev/null;
+	time -p cdbstats < "${PERFORMANCE}" > /dev/null;
+
 	time -p ./cdb   -d "${PERFORMANCE}" > /dev/null;
 	time -p cdb     -d "${PERFORMANCE}" > /dev/null;
 	time -p cdbdump  < "${PERFORMANCE}" > /dev/null;
@@ -76,8 +80,6 @@ EOF
 +4,7:open->seasame
 EOF
 	set +x;
-
-
 
 	t() {
 		R=$(eval "${1}");

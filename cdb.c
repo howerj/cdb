@@ -38,13 +38,6 @@
 #define BUCKETS                   (1ul << NBUCKETS)
 #define READ_BUFFER_LENGTH        (256ul)
 
-/* TODO: Lightweight assertions / logging can be accomplished by storing
- * or printing a line number, function pointer, an perhaps a single n-bit
- * user defined value. Decoding these values portably would be problematic,
- * however the system would be small. Assert could also be replaced with
- * one defined here so we have more control over it and do not bloat
- * the library with strings so much.  */
-
 enum {
 	CDB_OK_E             =   0, /* no error */
 	CDB_NOT_FOUND_E      =   0, /* key: not-found */
@@ -82,9 +75,7 @@ struct cdb { /* constant database handle: for all your querying needs! */
 	cdb_word_t file_start, /* start position of structures in file */
 	       file_end,       /* end position of database in file, if known, zero otherwise */
 	       hash_start;     /* start of secondary hash tables near end of file, if known, zero otherwise */
-	/* TODO: Having two positions is a bit ugly / inconsistent */
-	cdb_word_t wpos,       /* write key/value file pointer position (creation only) */
-		   spos;       /* read and seek position */
+	cdb_word_t position;   /* read/write/seek position: be careful with this variable! */
 	int error;             /* error, if any, any error causes database to be invalid */
 	unsigned create  :1,   /* have we opened database up in create mode? */
 		 opened  :1,   /* have we successfully opened up the database? */
@@ -151,8 +142,6 @@ static inline int cdb_error(cdb_t *cdb, const int error) {
 	return cdb_status(cdb);
 }
 
-/* TODO: Check if all overflow checks are needed, or if we can just
- * perform them in the read/write/seek functions */
 static inline int cdb_bound_check(cdb_t *cdb, const int fail) {
 	assert(cdb);
 	return cdb_error(cdb, fail ? CDB_ERROR_BOUND_E : CDB_OK_E);
@@ -214,11 +203,11 @@ static int cdb_seek_internal(cdb_t *cdb, const cdb_word_t position) {
 	if (cdb->opened && cdb->create == 0)
 		if (cdb_bound_check(cdb, position < cdb->file_start || cdb->file_end < position))
 			return -1;
-	if (cdb->spos == position)
+	if (cdb->position == position)
 		return cdb_error(cdb, CDB_OK_E);
 	const long r = cdb->ops.seek(cdb->file, position);
 	if (r >= 0)
-		cdb->spos = position;
+		cdb->position = position;
 	return cdb_error(cdb, r < 0 ? CDB_ERROR_SEEK_E : CDB_OK_E);
 }
 
@@ -235,10 +224,10 @@ static cdb_word_t cdb_read_internal(cdb_t *cdb, void *buf, cdb_word_t length) {
 	if (cdb_error(cdb, cdb->create != 0 ? CDB_ERROR_MODE_E : 0))
 		return 0;
 	const cdb_word_t r = cdb->ops.read(cdb->file, buf, length);
-	const cdb_word_t n = cdb->spos + r;
-	if (cdb_overflow_check(cdb, n < cdb->wpos) < 0)
+	const cdb_word_t n = cdb->position + r;
+	if (cdb_overflow_check(cdb, n < cdb->position) < 0)
 		return 0;
-	cdb->spos = n;
+	cdb->position = n;
 	return r;
 }
 
@@ -254,10 +243,10 @@ static cdb_word_t cdb_write(cdb_t *cdb, void *buf, size_t length) {
 	if (cdb_error(cdb, cdb->create == 0 ? CDB_ERROR_MODE_E : 0))
 		return 0;
 	const cdb_word_t r = cdb->ops.write(cdb->file, buf, length);
-	const cdb_word_t n = cdb->wpos + r;
-	if (cdb_overflow_check(cdb, n < cdb->wpos) < 0)
+	const cdb_word_t n = cdb->position + r;
+	if (cdb_overflow_check(cdb, n < cdb->position) < 0)
 		return 0;
-	cdb->wpos = n;
+	cdb->position = n;
 	return r;
 }
 
@@ -337,14 +326,14 @@ static inline int cdb_finalize(cdb_t *cdb) { /* write hash tables to disk */
 	cdb_word_t *positions = cdb_allocate(cdb, mlen * sizeof *positions);
 	if (!hashes || !positions)
 		goto fail;
-	if (cdb_seek_internal(cdb, cdb->wpos) < 0)
-		goto fail;
-	cdb->hash_start = cdb->wpos;
+	/* NB. No need to seek as we are the only thing that can affect
+	 * cdb->position in write mode */
+	cdb->hash_start = cdb->position;
 
 	for (size_t i = 0; i < BUCKETS; i++) { /* write tables at end of file */
 		cdb_hash_table_t *t = &cdb->table1[i];
 		const cdb_word_t length = t->header.length * 2ul;
-		t->header.position = cdb->wpos; /* needs to be set */
+		t->header.position = cdb->position; /* needs to be set */
 		if (length == 0)
 			continue;
 		if (cdb_bound_check(cdb, length < t->header.length) < 0)
@@ -383,7 +372,7 @@ static inline int cdb_finalize(cdb_t *cdb) { /* write hash tables to disk */
 			if (cdb_write_word_pair(cdb, hashes[j], positions[j]) < 0)
 				goto fail;
 	}
-	cdb->file_end = cdb->wpos;
+	cdb->file_end = cdb->position;
 	if (cdb_seek_internal(cdb, cdb->file_start) < 0)
 		goto fail;
 	for (size_t i = 0; i < BUCKETS; i++) { /* write initial hash table */
@@ -634,10 +623,6 @@ int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value) {
 	return cdb_get_record(cdb, key, value, 0l);
 }
 
-/* Missing from the API is a way of retrieving keys in a more efficient
- * manner. Retrieving the Nth key means cycling through prior keys, by
- * storing a little state in 'cdb_t' we could support this. */
-
 int cdb_get_count(cdb_t *cdb, const cdb_buffer_t *key, long *count) {
 	assert(cdb);
 	assert(cdb->opened);
@@ -721,7 +706,7 @@ int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 	assert(cdb->ops.hash);
 	assert(key);
 	assert(value);
-	assert(cdb->wpos >= cdb->file_start);
+	assert(cdb->position >= cdb->file_start);
 	if (CDB_WRITE_ON == 0)
 		return cdb_error(cdb, CDB_ERROR_DISABLED_E);
 	if (cdb->error)
@@ -731,9 +716,9 @@ int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 		goto fail;
 	}
 	const cdb_word_t h = cdb->ops.hash((uint8_t*)(key->buffer), key->length);
-	if (cdb_hash_grow(cdb, h, cdb->wpos) < 0)
+	if (cdb_hash_grow(cdb, h, cdb->position) < 0)
 		goto fail;
-	if (cdb_seek_internal(cdb, cdb->wpos) < 0)
+	if (cdb_seek_internal(cdb, cdb->position) < 0)
 		goto fail;
 	if (cdb_write_word_pair(cdb, key->length, value->length) < 0)
 		goto fail;
@@ -743,7 +728,6 @@ int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 		goto fail;
 	if (cdb_overflow_check(cdb, (key->length + value->length) < key->length) < 0)
 		goto fail;
-	cdb->spos = cdb->wpos; /* TODO: Fix this hack */
 	cdb->empty = 0;
 	return cdb_status(cdb);
 fail:

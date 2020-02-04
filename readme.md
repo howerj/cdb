@@ -401,19 +401,12 @@ The lack of a header might be solved in creative ways as:
   information about the file type and structure.
 
 TODO:
-* [ ] Reduce data structure sizes needed
-* [ ] Bench mark this library against other CDB libraries, some ideas for
-increasing performance include; memory mapping files, reducing system calls,
-buffering file streams, but most importantly - benchmark the code against 
-other CDB implementations. Performance ideas:
-  - [ ] Avoiding double buffering with file API. There are some loops that
-  are simple copies.
-  - [ ] mmap files
-  - [ ] Doing zero copy transfers so we do not have to switch to/from kernel space
-  as much.
+
 * [ ] Document a possible file format/header format based on PNG specification,
   document design decisions and improve documentation
-* [ ] Cleanup/Simplify C API and make multiple key retrieval more efficient
+* [ ] Cleanup/Simplify C API and make multiple key retrieval more efficient,
+  perhaps a function like 'cdb\_get\_next\_record' could be made, or the
+  current 'cdb\_get\_record' could be modified.
 * [ ] Remove TODOs before merging 4.0 branch onto master, squashing commits if
   needed.
 * [ ] Remove the pre-processor typedefs if possible and simplify header,
@@ -423,20 +416,17 @@ other CDB implementations. Performance ideas:
   and more.
 * [ ] Generate ctags and hide in '.git' folder. Include makefile itself in
   list of dependencies.
-* [ ] Make a script for benchmarking this implementation against others, if
-  possible including memory usage, program size, and of course speed.
 * [ ] An option for dumping out keys and their hashes could be made, using
   Unix utilities it would then be possible to construct the database in hash
   value order.
 * [ ] If using CDB purely to test membership of a set then this DB places
   a 4 byte overhead per key which is unneeded. This could be made into an
   option.
-* [x] Allow custom compare and hash functions in the database, such as
-  SOUNDEX, so similar keys *collide* for a fuzzy search (a second index 
-  could be used with the original hash algorithm so we can perform an
-  exact lookup as well). Different indices could be used by specifying
-  a different offset for the initial hash table.
+* [ ] Generate larger test files.
 * [ ] Implement SOUNDEX and try to do something cool with it.
+* [ ] Have an option to prevent the addition of duplicate keys?
+* [ ] Normalize command line options so they are the same as other CDB
+  implementations.
 
 # BUGS
 

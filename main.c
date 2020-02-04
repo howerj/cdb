@@ -208,12 +208,12 @@ static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
 		return -1;
 	char buf[IO_BUFFER_SIZE];
 	const size_t length = fp->length;
-	for (size_t i = 0; i < length; i += sizeof buf) {
+	for (size_t i = 0; i < length; i += sizeof buf) { /* NB. Double buffering! */
 		const size_t l = length - i;
 		assert(l <= sizeof buf);
 		if (cdb_read(cdb, buf, MIN(sizeof buf, l)) < 0)
 			return -1;
-		if (fwrite(buf, 1, l, output) != l) /* TODO: Double buffered, not needed */
+		if (fwrite(buf, 1, l, output) != l)
 			return -1;
 	}
 	return 0;
