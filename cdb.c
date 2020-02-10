@@ -113,7 +113,6 @@ int cdb_get_error(cdb_t *cdb) {
 static inline uint32_t djb_hash(const uint8_t *s, const size_t length) {
 	assert(s);
 	uint32_t h = 5381ul;
-	/* NB. Hash dependent on CDB word size at the moment...*/
 	for (size_t i = 0; i < length; i++)
 		h = ((h << 5ul) + h) ^ s[i]; /* (h * 33) xor c */
 	return h;

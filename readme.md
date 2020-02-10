@@ -12,6 +12,10 @@ cdb -\[cdkstV\] file.cdb
 
 cdb -q file.cdb key \[record#\]
 
+cdb -g -M minimum -M maximum -R records -S seed
+
+cdb -H
+
 # DESCRIPTION
 
 	Author:     Richard James Howe
@@ -23,6 +27,11 @@ A clone of the [CDB][] database, a simple, read-only (once created) database.
 The database library is designed so it can be embedded into a microcontroller
 if needed. This program can be used for creating and querying CDB databases,
 which consist of key-value pairs of binary data.
+
+This program also includes several options that help in testing out the
+database, one for hashing input keys and printing the hash for the default hash
+function and another one for generating a database with (Pseudo-)random keys
+and values of a given length.
 
 # OPTIONS
 
@@ -46,6 +55,17 @@ which consist of key-value pairs of binary data.
 
 **-q**  *file.cdb key record-number* : query the database for a key, with an optional record
 
+**-H** : hash keys and output their hash
+
+**-g**  : spit out an example database
+
+**-m** number   : set minimum length of generated record
+
+**-M** number   : set maximum length of generated record
+
+**-R** number   : set number of generated records
+
+**-S** number   : set seed for record generation
 
 # EXAMPLES
 
@@ -125,7 +145,7 @@ pairs in the format "key value", with one record per line and optional comment
 lines:
 
 	#!/bin/sh
-	awk '
+	LC_ALL='C' awk '
 	  /^[^#]/ {
 	    print "+" length($1) "," length($2) ":" $1 "->" $2
 	  }
@@ -399,6 +419,8 @@ The lack of a header might be solved in creative ways as:
 * If a file successfully passes a verification it can be identified as a valid
   CDB file of that size, this means we would not need to store header
   information about the file type and structure.
+* We could place the header within the key-value section of the database, or
+  even at the end of the file.
 
 TODO:
 
@@ -426,7 +448,9 @@ TODO:
 * [ ] Implement SOUNDEX and try to do something cool with it.
 * [ ] Have an option to prevent the addition of duplicate keys?
 * [ ] Normalize command line options so they are the same as other CDB
-  implementations.
+  implementations. Also get rid of getopt, it's not really needed.
+* [ ] Change the getopt implementation so it accepts a '#' for a long number
+  and does checking no it.
 
 # BUGS
 

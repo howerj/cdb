@@ -339,7 +339,7 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 		cdb_word_t klen = 0, vlen = 0;
 		char sep[2] = { 0 };
 		const int first = fgetc(input);
-		if (first == EOF) /* || first == '\n' {need to handle '\r' as well}*/
+		if (first == EOF) /* || first == '\n' {need to handle '\r' as well} */
 			goto end;
 		if (isspace(first))
 			continue;
@@ -537,6 +537,74 @@ static int cdb_null_cb(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos
 	return 0;
 }
 
+static uint64_t xorshift128(uint64_t s[2]) { /* A few rounds of SPECK or TEA ciphers also make good PRNG */
+	assert(s);
+	if (!s[0] && !s[1])
+		s[0] = 1;
+	uint64_t a = s[0];
+	const uint64_t b = s[1];
+	s[0] = b;
+	a ^= a << 23;
+	a ^= a >> 18;
+	a ^= b;
+	a ^= b >>  5;
+	s[1] = a;
+	return a + b;
+}
+
+static int generate(FILE *output, unsigned long records, unsigned long min, unsigned long max, unsigned long seed) {
+	assert(output);
+	uint64_t s[2] = { seed, 0 };
+	if (max == 0)
+		max = 1024;
+	if (min > max)
+		min = max;
+	if ((max + min) > max)
+		return -1;
+	for (uint64_t i = 0; i < records; i++) {
+		const unsigned long kl = (xorshift128(s) % (max + min)) + min; /* adds bias but so what fight me */
+		const unsigned long vl = (xorshift128(s) % (max + min)) + min;
+		if (fprintf(output, "+%lu,%lu:", kl, vl) < 0)
+			return -1;
+		for (unsigned long j = 0; j < kl; j++)
+			if (fputc('a' + (xorshift128(s) % 26), output) < 0)
+				return -1;
+		if (fputs("->", output) < 0)
+			return -1;
+		for (unsigned long j = 0; j < vl; j++)
+			if (fputc('a' + (xorshift128(s) % 26), output) < 0)
+				return -1;
+		if (fputc('\n', output) < 0)
+			return -1;
+	}
+	if (fputc('\n', output) < 0)
+		return -1;
+	return 0;
+}
+
+/* This is not 'djb2' hash - the character is xor'ed in and not added. */
+static inline uint32_t djb_hash(const uint8_t *s, const size_t length) {
+	assert(s);
+	uint32_t h = 5381ul;
+	for (size_t i = 0; i < length; i++)
+		h = ((h << 5ul) + h) ^ s[i]; /* (h * 33) xor c */
+	return h;
+}
+
+static int hasher(FILE *input, FILE *output) { /* should really input keys in "+length:key\n" format */
+	assert(input);
+	assert(output);
+	char line[512] = { 0 }; /* long enough for everyone right? */
+	for (; fgets(line, sizeof line, input); line[0] = 0) {
+		size_t l = strlen(line);
+		if (l && line[l-1] == '\n')
+			line[l--] = 0;
+		if (fprintf(output, "0x%08lx\n", (unsigned long)djb_hash((uint8_t*)line, l)) < 0)
+			return -1;
+	}
+	return 0;
+}
+
 static int help(FILE *output, const char *arg0) {
 	assert(output);
 	assert(arg0);
@@ -548,7 +616,7 @@ static int help(FILE *output, const char *arg0) {
 	const unsigned y = (version >>  8) & 0xff;
 	const unsigned z = (version >>  0) & 0xff;
 	static const char *usage = "\
-Usage   : %s -hv *OR* -[rcdkstVT] file.cdb *OR* -q file.cdb key [record#]\n\
+Usage   : %s -hv *OR* -[rcdkstVT] file.cdb *OR* -q file.cdb key [record#] *OR* -g *OR* -H\n\
 Program : Constant Database Driver (clone of https://cr.yp.to/cdb.html)\n\
 Author  : Richard James Howe\n\
 Email   : howe.r.j.89@gmail.com\n\
@@ -568,7 +636,13 @@ Options :\n\n\
 \t-t file.cdb : run internal tests generating a test file\n\
 \t-T temp.cdb : name of temporary file to use\n\
 \t-V file.cdb : validate database\n\
-\t-q file.cdb key #? : run query for key with optional record number\n\n\
+\t-q file.cdb key #? : run query for key with optional record number\n\
+\t-H          : hash keys and output their hash\n\
+\t-g          : spit out an example database\n\
+\t-m number   : set minimum length of generated record\n\
+\t-M number   : set maximum length of generated record\n\
+\t-R number   : set number of generated records\n\
+\t-S number   : set seed for record generation\n\n\
 In create mode the key input format is:\n\n\
 \t+key-length,value-length:key->value\n\n\
 An example:\n\n\
@@ -583,10 +657,11 @@ is an error.\n\
 }
 
 int main(int argc, char **argv) {
-	enum { QUERY, DUMP, CREATE, STATS, KEYS, VALIDATE };
+	enum { QUERY, DUMP, CREATE, STATS, KEYS, VALIDATE, GENERATE, };
 	const char *file = NULL;
 	char *tmp = NULL;
 	int mode = VALIDATE, creating = 0;
+	unsigned long min = 0ul, max = 1024ul, records = 1024ul, seed = 0ul;
 
 	binary(stdin);
 	binary(stdout);
@@ -611,9 +686,10 @@ int main(int argc, char **argv) {
 	};
 
 	cdb_getopt_t opt = { .init = 0 };
-	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hvt:c:d:k:s:q:V:T:")) != -1; ) {
+	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hHgvt:c:d:k:s:q:V:T:m:M:R:S:")) != -1; ) {
 		switch (ch) {
 		case 'h': return help(stdout, argv[0]), 0;
+		case 'H': return hasher(stdin, stdout);
 		case 't': return -cdb_tests(&ops, NULL, opt.arg);
 		case 'v': verbose++;                       break;
 		case 'c': file = opt.arg; mode = CREATE;   break;
@@ -622,10 +698,18 @@ int main(int argc, char **argv) {
 		case 's': file = opt.arg; mode = STATS;    break;
 		case 'q': file = opt.arg; mode = QUERY;    break;
 		case 'V': file = opt.arg; mode = VALIDATE; break;
-		case 'T': tmp = opt.arg;                   break;
+		case 'g': mode = GENERATE; break;
+		case 'T': tmp  = opt.arg;                  break;
+		case 'm': min     = atol(opt.arg);         break;
+		case 'M': max     = atol(opt.arg);         break;
+		case 'R': records = atol(opt.arg);         break;
+		case 'S': seed    = atol(opt.arg);         break;
 		default: help(stderr, argv[0]); return 1;
 		}
 	}
+
+	if (mode == GENERATE)
+		return generate(stdout, records, min, max, seed);
 
 	if (!file)
 		return help(stderr, argv[0]), 1;
