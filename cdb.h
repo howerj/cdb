@@ -48,6 +48,8 @@ typedef struct {
 	void *(*open)(const char *name, int mode);
 	int (*close)(void *file);
 	int (*flush)(void *file); /* (optional) called at end of successful creation */
+	void *arena;   /* used for 'arena' argument for the allocator, can be NULL if allocator allows it */
+	unsigned size; /* Either 16, 32 or 64, but cannot be bigger than 'sizeof(cdb_word_t)*8' */
 } cdb_callbacks_t; /* a file abstraction layer, could point to memory, flash, or disk */
 
 typedef struct {
@@ -63,7 +65,7 @@ typedef struct {
 typedef int (*cdb_callback)(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param);
 
 /* All functions return: < 0 on failure, 0 on success/not found, 1 on found if applicable */
-CDB_API int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, void *arena, int create, const char *file); /* arena may be NULL */
+CDB_API int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, int create, const char *file); /* arena may be NULL */
 CDB_API int cdb_close(cdb_t *cdb);  /* free cdb, close (and write to disk if in create mode) */
 CDB_API int cdb_read(cdb_t *cdb, void *buf, cdb_word_t length); /* returns error code not length! */
 CDB_API int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value); /* do not call cdb_read and/or cdb_seek in open mode */
@@ -75,7 +77,7 @@ CDB_API int cdb_get_record(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *
 CDB_API int cdb_get_count(cdb_t *cdb, const cdb_buffer_t *key, long *count);
 CDB_API int cdb_get_error(cdb_t *cdb);
 CDB_API int cdb_get_version(unsigned long *version); /* version number in x.y.z format, z = LSB, MSB is library info */
-CDB_API int cdb_tests(const cdb_callbacks_t *ops, void *arena, const char *test_file);
+CDB_API int cdb_tests(const cdb_callbacks_t *ops, const char *test_file);
 
 #ifdef __cplusplus
 }

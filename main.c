@@ -418,7 +418,7 @@ static int cdb_stats(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t
 	return 0;
 }
 
-static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
+static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose, size_t bytes) {
 	assert(cdb);
 	assert(output);
 	unsigned long distances[DISTMAX] = { 0 };
@@ -438,7 +438,7 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 			return -1;
 
 	for (size_t i = 0; i < 256; i++) {
-		if (cdb_seek(cdb, i * (2u * sizeof (cdb_word_t))) < 0)
+		if (cdb_seek(cdb, i * (2u * bytes)) < 0)
 			return -1;
 		cdb_word_t pos = 0, num = 0;
 		if (cdb_read_word_pair(cdb, &pos, &num) < 0)
@@ -529,7 +529,7 @@ static int cdb_query(cdb_t *cdb, char *key, int record, FILE *output) {
 	return 2; /* not found */
 }
 
-static int cdb_null_cb(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param) {
+static int cdb_verify_cb(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param) {
 	UNUSED(cdb);
 	UNUSED(key);
 	UNUSED(value);
@@ -673,7 +673,7 @@ int main(int argc, char **argv) {
 	if (setvbuf(stdout, obuf, _IOFBF, sizeof obuf) < 0)
 		return -1;
 
-	static const cdb_callbacks_t ops = {
+	static cdb_callbacks_t ops = {
 		.allocator = cdb_allocator_cb,
 		.hash      = NULL,
 		.compare   = NULL,
@@ -683,14 +683,16 @@ int main(int argc, char **argv) {
 		.open      = cdb_open_cb,
 		.close     = cdb_close_cb,
 		.flush     = cdb_flush_cb,
+		.arena     = NULL,
+		.size      = sizeof (cdb_word_t) * 8,
 	};
 
 	cdb_getopt_t opt = { .init = 0 };
-	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hHgvt:c:d:k:s:q:V:T:m:M:R:S:")) != -1; ) {
+	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hHgvt:c:d:k:s:q:V:b:T:m:M:R:S:")) != -1; ) {
 		switch (ch) {
 		case 'h': return help(stdout, argv[0]), 0;
 		case 'H': return hasher(stdin, stdout);
-		case 't': return -cdb_tests(&ops, NULL, opt.arg);
+		case 't': return -cdb_tests(&ops, opt.arg);
 		case 'v': verbose++;                       break;
 		case 'c': file = opt.arg; mode = CREATE;   break;
 		case 'd': file = opt.arg; mode = DUMP;     break;
@@ -698,7 +700,8 @@ int main(int argc, char **argv) {
 		case 's': file = opt.arg; mode = STATS;    break;
 		case 'q': file = opt.arg; mode = QUERY;    break;
 		case 'V': file = opt.arg; mode = VALIDATE; break;
-		case 'g': mode = GENERATE; break;
+		case 'b': ops.size = atol(opt.arg);        break;
+		case 'g': mode = GENERATE;                 break;
 		case 'T': tmp  = opt.arg;                  break;
 		case 'm': min     = atol(opt.arg);         break;
 		case 'M': max     = atol(opt.arg);         break;
@@ -722,7 +725,7 @@ int main(int argc, char **argv) {
 	info("opening '%s' for %s", name, creating ? "writing" : "reading");
 
 	errno = 0;
-	if (cdb_open(&cdb, &ops, NULL, creating, name) < 0) {
+	if (cdb_open(&cdb, &ops, creating, name) < 0) {
 		const char *f = errno ? strerror(errno) : "unknown";
 		const char *m = creating ? "create" : "read";
 		die("opening file '%s' in %s mode failed: %s", name, m, f);
@@ -733,8 +736,8 @@ int main(int argc, char **argv) {
 	case CREATE:   r = cdb_create(cdb, stdin);                                                       break;
 	case DUMP:     r = cdb_foreach(cdb, cdb_dump,      stdout); if (fputc('\n', stdout) < 0) r = -1; break;
 	case KEYS:     r = cdb_foreach(cdb, cdb_dump_keys, stdout); if (fputc('\n', stdout) < 0) r = -1; break;
-	case STATS:    r = cdb_stats_print(cdb, stdout, 0);                                              break;
-	case VALIDATE: r = cdb_foreach(cdb, cdb_null_cb, NULL);                                          break;
+	case STATS:    r = cdb_stats_print(cdb, stdout, 0, ops.size / 8ul);                              break;
+	case VALIDATE: r = cdb_foreach(cdb, cdb_verify_cb, NULL);                                        break;
 	case QUERY: {
 		if (opt.index >= argc)
 			die("-q opt requires key (and optional record number)");

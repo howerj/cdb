@@ -54,6 +54,7 @@ enum {
 	CDB_ERROR_FREE_E     = -10, /* free failed */
 	CDB_ERROR_MODE_E     = -11, /* incorrect mode for operation */
 	CDB_ERROR_DISABLED_E = -12, /* unimplemented/disabled feature */
+	CDB_ERROR_SIZE_E     = -13, /* invalid/unsupported size */
 };
 
 typedef struct {
@@ -70,8 +71,7 @@ typedef struct {
 
 struct cdb { /* constant database handle: for all your querying needs! */
 	cdb_callbacks_t ops;   /* custom file/flash operators */
-	void	*file,         /* database handle */
-		*arena;        /* arena allocator */
+	void	*file;         /* database handle */
 	cdb_word_t file_start, /* start position of structures in file */
 	       file_end,       /* end position of database in file, if known, zero otherwise */
 	       hash_start;     /* start of secondary hash tables near end of file, if known, zero otherwise */
@@ -80,7 +80,6 @@ struct cdb { /* constant database handle: for all your querying needs! */
 	unsigned create  :1,   /* have we opened database up in create mode? */
 		 opened  :1,   /* have we successfully opened up the database? */
 		 empty   :1;   /* is the database empty? */
-
 	cdb_hash_table_t table1[]; /* only allocated if in create mode, BUCKETS elements are allocated */
 };
 
@@ -107,6 +106,22 @@ int cdb_get_version(unsigned long *version) {
 int cdb_get_error(cdb_t *cdb) {
 	assert(cdb);
 	return cdb->error;
+}
+
+static inline size_t cdb_get_size(cdb_t *cdb) {
+	assert(cdb);
+	return cdb->ops.size;
+}
+
+static inline uint64_t cdb_get_mask(cdb_t *cdb) {
+	assert(cdb);
+	const size_t l = cdb_get_size(cdb);
+	if (l == 16/CHAR_BIT)
+		return UINT16_MAX;
+	if (l == 32/CHAR_BIT)
+		return UINT32_MAX;
+	assert(l == 64/CHAR_BIT);
+	return UINT64_MAX;
 }
 
 /* This is not 'djb2' hash - the character is xor'ed in and not added. */
@@ -173,13 +188,13 @@ static inline int cdb_free(cdb_t *cdb, void *p) {
 	assert(cdb);
 	if (!p)
 		return 0;
-	(void)cdb->ops.allocator(cdb->arena, p, 0, 0);
+	(void)cdb->ops.allocator(cdb->ops.arena, p, 0, 0);
 	return 0;
 }
 
 static inline void *cdb_allocate(cdb_t *cdb, const size_t length) {
 	assert(cdb);
-	void *r = cdb->ops.allocator(cdb->arena, NULL, 0, length);
+	void *r = cdb->ops.allocator(cdb->ops.arena, NULL, 0, length);
 	if (length != 0 && r == NULL)
 		(void)cdb_error(cdb, CDB_ERROR_ALLOCATE_E);
 	return r ? memset(r, 0, length) : NULL;
@@ -187,7 +202,7 @@ static inline void *cdb_allocate(cdb_t *cdb, const size_t length) {
 
 static inline void *cdb_reallocate(cdb_t *cdb, void *pointer, const size_t length) {
 	assert(cdb);
-	void *r = cdb->ops.allocator(cdb->arena, pointer, 0, length);
+	void *r = cdb->ops.allocator(cdb->ops.arena, pointer, 0, length);
 	if (length != 0 && r == NULL)
 		(void)cdb_error(cdb, CDB_ERROR_ALLOCATE_E);
 	return r;
@@ -249,16 +264,16 @@ static cdb_word_t cdb_write(cdb_t *cdb, void *buf, size_t length) {
 	return r;
 }
 
-static inline void cdb_pack(uint8_t b[/*static (sizeof (cdb_word_t))*/], cdb_word_t w) {
+static inline void cdb_pack(uint8_t b[/*static (sizeof (cdb_word_t))*/], cdb_word_t w, size_t l) {
 	assert(b);
-	for (size_t i = 0; i < sizeof w; i++)
+	for (size_t i = 0; i < l; i++)
 		b[i] = (w >> (i * CHAR_BIT)) & 0xFFu;
 }
 
-static inline cdb_word_t cdb_unpack(uint8_t b[/*static (sizeof (cdb_word_t))*/]) {
+static inline cdb_word_t cdb_unpack(uint8_t b[/*static (sizeof (cdb_word_t))*/], size_t l) {
 	assert(b);
 	cdb_word_t w = 0;
-	for (size_t i = 0; i < sizeof w; i++)
+	for (size_t i = 0; i < l; i++)
 		w |= ((cdb_word_t)b[i]) << (i * CHAR_BIT);
 	return w;
 }
@@ -267,21 +282,23 @@ int cdb_read_word_pair(cdb_t *cdb, cdb_word_t *w1, cdb_word_t *w2) {
 	assert(cdb);
 	assert(w1);
 	assert(w2);
+	const size_t l = cdb_get_size(cdb);
 	uint8_t b[2ul * sizeof(cdb_word_t)];
-	const long r = cdb_read_internal(cdb, b, sizeof b);
-	if (r != sizeof b)
+	const long r = cdb_read_internal(cdb, b, 2ul * l);
+	if (r != (long)(2l * l))
 		return -1;
-	*w1 = cdb_unpack(b);
-	*w2 = cdb_unpack(b + sizeof(cdb_word_t));
+	*w1 = cdb_unpack(b, l);
+	*w2 = cdb_unpack(b + l, l);
 	return 0;
 }
 
 static int cdb_write_word_pair(cdb_t *cdb, const cdb_word_t w1, const cdb_word_t w2) {
 	assert(cdb);
+	const size_t l = cdb_get_size(cdb);
 	uint8_t b[2ul * sizeof(cdb_word_t)];
-	cdb_pack(b, w1);
-	cdb_pack(b + sizeof(cdb_word_t), w2);
-	if (cdb_write(cdb, b, sizeof b) != sizeof b)
+	cdb_pack(b,     w1, l);
+	cdb_pack(b + l, w2, l);
+	if (cdb_write(cdb, b, 2ul * l) != (2ul * l))
 		return -1;
 	return 0;
 }
@@ -309,7 +326,7 @@ static int cdb_free_resources(cdb_t *cdb) {
 		if (cdb_hash_free(cdb, &cdb->table1[i]) < 0)
 			r = -1;
 	(void)cdb_error(cdb, CDB_ERROR_E);
-	(void)cdb->ops.allocator(cdb->arena, cdb, 0, 0);
+	(void)cdb->ops.allocator(cdb->ops.arena, cdb, 0, 0);
 	return r;
 }
 
@@ -404,7 +421,7 @@ fail:
 	return CDB_ERROR_E;
 }
 
-int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, void *arena, const int create, const char *file) {
+int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, const int create, const char *file) {
 	/* We could allow the word size of the CDB database {16, 32 (default) or 64}
 	 * to be configured at run time and not compile time, this has API related
 	 * consequences, the size of 'cdb_word_t' would determine maximum size that
@@ -418,21 +435,28 @@ int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, void *arena, const int cre
 	assert(ops->close);
 	assert(ops->seek);
 	implies(create, ops->write);
+	BUILD_BUG_ON(CHAR_BIT != 8);
 	/* ops->flush is optional */
 	*cdb = NULL;
 	if (create && CDB_WRITE_ON == 0)
 		return CDB_ERROR_E;
+	/*TODO: auto-select size if ops->size == 0, changed comment in header
+	 * to reflect this */
+	if (ops->size != 16 && ops->size != 32 && ops->size != 64)
+		return CDB_ERROR_SIZE_E;
+	if (ops->size > (sizeof(cdb_word_t) * CHAR_BIT))
+		return CDB_ERROR_SIZE_E;
 	cdb_t *c = NULL;
 	const int large = CDB_MEMORY_INDEX_ON || create;
 	const size_t csz = (sizeof *c) + (large * sizeof c->table1[0] * BUCKETS);
-	c = ops->allocator(arena, NULL, 0, csz);
+	c = ops->allocator(ops->arena, NULL, 0, csz);
 	if (!c)
 		goto fail;
 	memset(c, 0, csz);
 	c->ops         = *ops;
+	c->ops.size   /= CHAR_BIT;
 	c->ops.hash    = c->ops.hash    ? c->ops.hash    : cdb_hash;
 	c->ops.compare = c->ops.compare ? c->ops.compare : cdb_memory_compare;
-	c->arena       = arena;
 	c->create      = create;
 	c->empty       = 1;
 	*cdb           = c;
@@ -457,7 +481,7 @@ int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, void *arena, const int cre
 			cdb_hash_table_t t = { .header = { .position = 0, .length = 0 } };
 			if (cdb_read_word_pair(c, &t.header.position, &t.header.length) < 0)
 				goto fail;
-			if (i && t.header.position != (prev + (pnum * (2ul * sizeof (cdb_word_t)))))
+			if (i && t.header.position != (prev + (pnum * (2ul * cdb_get_size(c)))))
 				goto fail;
 			prev = t.header.position;
 			pnum = t.header.length;
@@ -476,8 +500,8 @@ int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, void *arena, const int cre
 		}
 		if (cdb_seek_internal(c, c->file_start) < 0)
 			goto fail;
-		c->file_end   = hpos + (hlen * (2ul * sizeof(cdb_word_t)));
-		c->hash_start = lset ? lpos : (BUCKETS * (2ul * sizeof(cdb_word_t)));
+		c->file_end   = hpos + (hlen * (2ul * cdb_get_size(c)));
+		c->hash_start = lset ? lpos : (BUCKETS * (2ul * cdb_get_size(c)));
 		if (lset) {
 			if (cdb_bound_check(c, c->file_start > lpos) < 0)
 				goto fail;
@@ -535,7 +559,7 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 		goto fail;
 	}
 	/* locate key in first table */
-	const cdb_word_t h = cdb->ops.hash((uint8_t *)(key->buffer), key->length);
+	const cdb_word_t h = cdb->ops.hash((uint8_t *)(key->buffer), key->length) & cdb_get_mask(cdb);
 	cdb_word_t pos = 0, num = 0;
 
 	if (CDB_MEMORY_INDEX_ON) { /* use more memory (~4KiB) to speed up first match */
@@ -543,7 +567,7 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 		pos = t->header.position;
 		num = t->header.length;
 	} else {
-		if (cdb_seek_internal(cdb, cdb->file_start + ((h % BUCKETS) * (2ul * sizeof(cdb_word_t)))) < 0)
+		if (cdb_seek_internal(cdb, cdb->file_start + ((h % BUCKETS) * (2ul * cdb_get_size(cdb)))) < 0)
 			goto fail;
 		if (cdb_read_word_pair(cdb, &pos, &num) < 0)
 			goto fail;
@@ -554,7 +578,7 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 		goto fail;
 	const cdb_word_t start = (h >> NBUCKETS) % num;
 	for (cdb_word_t i = 0; i < num; i++) {
-		const cdb_word_t seekpos = pos + (((start + i) % num) * (2ul * sizeof(cdb_word_t)));
+		const cdb_word_t seekpos = pos + (((start + i) % num) * (2ul * cdb_get_size(cdb)));
 		if (seekpos < pos || seekpos > cdb->file_end)
 			goto fail;
 		if (cdb_seek_internal(cdb, seekpos) < 0)
@@ -576,7 +600,7 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 			cdb_word_t klen = 0, vlen = 0;
 			if (cdb_read_word_pair(cdb, &klen, &vlen) < 0)
 				goto fail;
-			const cdb_file_pos_t k2 = { .length = klen, .position = p1 + (2ul * sizeof(cdb_word_t)) };
+			const cdb_file_pos_t k2 = { .length = klen, .position = p1 + (2ul * cdb_get_size(cdb)) };
 			if (cdb_overflow_check(cdb, k2.position < p1 || (k2.position + klen) < k2.position) < 0)
 				goto fail;
 			if (cdb_bound_check(cdb, k2.position + klen > cdb->hash_start) < 0)
@@ -635,16 +659,13 @@ int cdb_get_count(cdb_t *cdb, const cdb_buffer_t *key, long *count) {
 	return r;
 }
 
-/* TODO: Make another 'cdb_foreach' for validation that checks each key belongs
- * in the bucket it should? This could be done by passing in the hash to the
- * callback... */
 int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
 	assert(cdb);
 	assert(cdb->opened);
 	assert(cb);
 	if (cdb->error || cdb->create)
 		goto fail;
-	cdb_word_t pos = cdb->file_start + (256ul * (2ul * sizeof (cdb_word_t)));
+	cdb_word_t pos = cdb->file_start + (256ul * (2ul * cdb_get_size(cdb)));
 	if (cdb_seek_internal(cdb, pos) < 0)
 		goto fail;
 	for (;pos < cdb->hash_start;) {
@@ -653,8 +674,8 @@ int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
 		cdb_word_t klen = 0, vlen = 0;
 		if (cdb_read_word_pair(cdb, &klen, &vlen) < 0)
 			goto fail;
-		const cdb_file_pos_t key   = { .length = klen, .position = pos + (2ul * sizeof(cdb_word_t)), };
-		const cdb_file_pos_t value = { .length = vlen, .position = pos + (2ul * sizeof(cdb_word_t)) + klen, };
+		const cdb_file_pos_t key   = { .length = klen, .position = pos + (2ul * cdb_get_size(cdb)), };
+		const cdb_file_pos_t value = { .length = vlen, .position = pos + (2ul * cdb_get_size(cdb)) + klen, };
 		if (cdb_bound_check(cdb, value.position > cdb->hash_start) < 0)
 			goto fail;
 		if (cdb_bound_check(cdb, (value.position + value.length) > cdb->hash_start) < 0)
@@ -714,7 +735,7 @@ int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 		(void)cdb_error(cdb, CDB_ERROR_MODE_E);
 		goto fail;
 	}
-	const cdb_word_t h = cdb->ops.hash((uint8_t*)(key->buffer), key->length);
+	const cdb_word_t h = cdb->ops.hash((uint8_t*)(key->buffer), key->length) & cdb_get_mask(cdb);
 	if (cdb_hash_grow(cdb, h, cdb->position) < 0)
 		goto fail;
 	if (cdb_seek_internal(cdb, cdb->position) < 0)
@@ -748,19 +769,11 @@ static uint64_t xorshift128(uint64_t s[2]) { /* A few rounds of SPECK or TEA cip
 	return a + b;
 }
 
-#if defined(CDB_SIZE) && CDB_SIZE == 16
-#define VECT (128ul)
-#define KLEN (64ul)
-#define VLEN (64ul)
-#else
-#define VECT (1024ul)
-#define KLEN (1024ul)
-#define VLEN (1024ul)
-#endif
+#define MAXLEN (1024ul)
 
 /* TODO: Do minimal testing of corrupt images as well to check they are 
  * correctly diagnosed as being invalid. */
-int cdb_tests(const cdb_callbacks_t *ops, void *arena, const char *test_file) {
+int cdb_tests(const cdb_callbacks_t *ops, const char *test_file) {
 	assert(ops);
 	assert(test_file);
 	BUILD_BUG_ON(sizeof (cdb_word_t) < 2);
@@ -768,8 +781,13 @@ int cdb_tests(const cdb_callbacks_t *ops, void *arena, const char *test_file) {
 	if (CDB_TESTS_ON == 0)
 		return CDB_OK_E;
 
+	const size_t l = ops->size;
+	const size_t vectors = l == 16ul ? 128ul : MAXLEN;
+	const size_t klen    = l == 16ul ?  64ul : MAXLEN;
+	const size_t vlen    = l == 16ul ?  64ul : MAXLEN;
+
 	typedef struct {
-		char key[KLEN], value[VLEN], result[VLEN];
+		char key[MAXLEN], value[MAXLEN], result[MAXLEN];
 		long recno;
 		cdb_word_t klen, vlen;
 	} test_t;
@@ -803,17 +821,17 @@ int cdb_tests(const cdb_callbacks_t *ops, void *arena, const char *test_file) {
 	uint64_t s[2] = { 0 };
 	int r = CDB_OK_E;
 
-	if (cdb_open(&cdb, ops, arena, 1, test_file) < 0)
+	if (cdb_open(&cdb, ops, 1, test_file) < 0)
 		return CDB_ERROR_E;
 
-	if (!(ts = cdb_allocate(cdb, (dupcnt + VECT) * (sizeof *ts))))
+	if (!(ts = cdb_allocate(cdb, (dupcnt + vectors) * (sizeof *ts))))
 		goto fail;
 
-	for (unsigned i = 0; i < VECT; i++) {
+	for (unsigned i = 0; i < vectors; i++) {
 		char *k = ts[i].key;
 		char *v = ts[i].value;
-		const cdb_word_t kl = (xorshift128(s) % (KLEN - 1ul)) + 1ul;
-		const cdb_word_t vl = (xorshift128(s) % (VLEN - 1ul)) + 1ul;
+		const cdb_word_t kl = (xorshift128(s) % (klen - 1ul)) + 1ul;
+		const cdb_word_t vl = (xorshift128(s) % (vlen - 1ul)) + 1ul;
 		for (unsigned long j = 0; j < kl; j++)
 			k[j] = 'a' + (xorshift128(s) % 26);
 		for (unsigned long j = 0; j < vl; j++)
@@ -821,7 +839,7 @@ int cdb_tests(const cdb_callbacks_t *ops, void *arena, const char *test_file) {
 		const cdb_buffer_t key   = { .length = kl, .buffer = k };
 	       	const cdb_buffer_t value = { .length = vl, .buffer = v };
 		for (unsigned long j = 0; j < i; j++)
-			if (memcmp(ts[i].value, ts[j].value, VLEN) == 0)
+			if (memcmp(ts[i].value, ts[j].value, vlen) == 0)
 				ts[i].recno++;
 		if (cdb_add(cdb, &key, &value) < 0)
 			goto fail;
@@ -834,11 +852,11 @@ int cdb_tests(const cdb_callbacks_t *ops, void *arena, const char *test_file) {
 		const cdb_buffer_t key   = { .length = strlen(d.key),   .buffer = d.key };
 		const cdb_buffer_t value = { .length = strlen(d.value), .buffer = d.value };
 
-		memcpy(ts[i + VECT].key,   key.buffer,   key.length);
-		memcpy(ts[i + VECT].value, value.buffer, value.length);
+		memcpy(ts[i + vectors].key,   key.buffer,   key.length);
+		memcpy(ts[i + vectors].value, value.buffer, value.length);
 
 		for (unsigned long j = 0; j < i; j++)
-			if (memcmp(ts[i].value, ts[j].value, VLEN) == 0)
+			if (memcmp(ts[i].value, ts[j].value, vlen) == 0)
 				ts[i].recno++;
 
 		if (cdb_add(cdb, &key, &value) < 0)
@@ -846,17 +864,17 @@ int cdb_tests(const cdb_callbacks_t *ops, void *arena, const char *test_file) {
 	}
 
 	if (cdb_close(cdb) < 0) {
-		(void)ops->allocator(arena, ts, 0, 0);
+		(void)ops->allocator(ops->arena, ts, 0, 0);
 		return -1;
 	}
 	cdb = NULL;
 
-	if (cdb_open(&cdb, ops, arena, 0, test_file) < 0) {
-		(void)ops->allocator(arena, ts, 0, 0);
+	if (cdb_open(&cdb, ops, 0, test_file) < 0) {
+		(void)ops->allocator(ops->arena, ts, 0, 0);
 		return -1;
 	}
 
-	for (unsigned i = 0; i < (VECT + dupcnt); i++) {
+	for (unsigned i = 0; i < (vectors + dupcnt); i++) {
 		test_t *t = &ts[i];
 		const cdb_buffer_t key = { .length = t->klen, .buffer = t->key };
 		cdb_file_pos_t result = { 0, 0 }, discard = { 0, 0 };
@@ -874,7 +892,7 @@ int cdb_tests(const cdb_callbacks_t *ops, void *arena, const char *test_file) {
 		if (d == CDB_NOT_FOUND_E)
 			r = -4;
 
-		if (result.length > VLEN)
+		if (result.length > vlen)
 			goto fail;
 		if (result.length != t->vlen) {
 			r = -5;
@@ -900,7 +918,7 @@ int cdb_tests(const cdb_callbacks_t *ops, void *arena, const char *test_file) {
 		r = -1;
 	return r;
 fail:
-	(void)ops->allocator(arena, ts, 0, 0);
+	(void)ops->allocator(ops->arena, ts, 0, 0);
 	(void)cdb_close(cdb);
 	return CDB_ERROR_E;
 }

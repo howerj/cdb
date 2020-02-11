@@ -37,6 +37,8 @@ and values of a given length.
 
 **-h** : print out this help message and exit successfully
 
+**-b** : set the size of the CDB database to use (default is 32, can be 16 or 64)
+
 **-v**: increase verbosity level
 
 **-t** *file.cdb* : run internal tests, exit with zero on a pass
@@ -441,16 +443,27 @@ TODO:
 * [ ] An option for dumping out keys and their hashes could be made, using
   Unix utilities it would then be possible to construct the database in hash
   value order.
+* [ ] Change key dump so if option is specified twice it will dump out hashes
+  using the CDB hash function.
 * [ ] If using CDB purely to test membership of a set then this DB places
   a 4 byte overhead per key which is unneeded. This could be made into an
   option.
 * [ ] Generate larger test files.
-* [ ] Implement SOUNDEX and try to do something cool with it.
 * [ ] Have an option to prevent the addition of duplicate keys?
 * [ ] Normalize command line options so they are the same as other CDB
   implementations. Also get rid of getopt, it's not really needed.
 * [ ] Change the getopt implementation so it accepts a '#' for a long number
   and does checking no it.
+* [ ] Database only works up to 2GiB on a 32-bit machine, not 4GiB like it
+  could.
+* [ ] Change verify callback so it attempts to find the key in the database
+  in the foreach callback.
+* [ ] Test the C API in the test suite, make sure it returns errors when it
+  should, for example calling *cdb\_read* on a handle opened in write mode and
+  the like.
+* [ ] -H option needs hashing correcting for size.
+* [ ] Correct documentation about file format size options (16, 32 & 64 bit
+  formats).
 
 # BUGS
 
