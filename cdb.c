@@ -33,10 +33,10 @@
 #define BUILD_BUG_ON(condition)   ((void)sizeof(char[1 - 2*!!(condition)]))
 #define implies(P, Q)             assert(!(P) || (Q))
 #define MIN(X, Y)                 ((X) < (Y) ? (X) : (Y))
-#define FILE_START                (0ul)
 #define NBUCKETS                  (8ul)
 #define BUCKETS                   (1ul << NBUCKETS)
 #define READ_BUFFER_LENGTH        (256ul)
+#define FILE_START                (0ul)
 
 enum {
 	CDB_OK_E             =   0, /* no error */
@@ -70,12 +70,15 @@ typedef struct {
 } cdb_hash_table_t; /* secondary hash table structure */
 
 struct cdb { /* constant database handle: for all your querying needs! */
-	cdb_callbacks_t ops;   /* custom file/flash operators */
+	cdb_options_t ops;   /* custom file/flash operators */
 	void	*file;         /* database handle */
 	cdb_word_t file_start, /* start position of structures in file */
 	       file_end,       /* end position of database in file, if known, zero otherwise */
 	       hash_start;     /* start of secondary hash tables near end of file, if known, zero otherwise */
 	cdb_word_t position;   /* read/write/seek position: be careful with this variable! */
+	cdb_word_t next_i,     /* previously found match: position in hash table */
+		   next_num,   /* previously found match: number of elements in hash table */
+		   next_start; /* previously found match: start of */
 	int error;             /* error, if any, any error causes database to be invalid */
 	unsigned create  :1,   /* have we opened database up in create mode? */
 		 opened  :1,   /* have we successfully opened up the database? */
@@ -89,10 +92,9 @@ struct cdb { /* constant database handle: for all your querying needs! */
  * mark it as being used. */
 
 int cdb_get_version(unsigned long *version) {
-	BUILD_BUG_ON(CDB_SIZE != 16 && CDB_SIZE != 32 && CDB_SIZE != 64);
-	BUILD_BUG_ON((sizeof (cdb_word_t) * CHAR_BIT) != CDB_SIZE);
+	BUILD_BUG_ON(sizeof(cdb_word_t) != 2 &&sizeof(cdb_word_t) != 4 && sizeof(cdb_word_t) != 8);
 	assert(version);
-	unsigned long spec = CDB_SIZE >> 4; /* Lowest three bits = size */
+	unsigned long spec = ((sizeof (cdb_word_t)) * CHAR_BIT) >> 4; /* Lowest three bits = size */
 	spec |= CDB_TESTS_ON        << 4;
 	spec |= CDB_WRITE_ON        << 5;
 	spec |= CDB_MEMORY_INDEX_ON << 6;
@@ -208,8 +210,7 @@ static inline void *cdb_reallocate(cdb_t *cdb, void *pointer, const size_t lengt
 	return r;
 }
 
-/* NB. A seek can cause buffers to be flushed, which degrades
- * performance quite a lot */
+/* NB. A seek can cause buffers to be flushed, which degrades performance quite a lot */
 static int cdb_seek_internal(cdb_t *cdb, const cdb_word_t position) {
 	cdb_assert(cdb);
 	if (cdb->error)
@@ -219,7 +220,7 @@ static int cdb_seek_internal(cdb_t *cdb, const cdb_word_t position) {
 			return -1;
 	if (cdb->position == position)
 		return cdb_error(cdb, CDB_OK_E);
-	const long r = cdb->ops.seek(cdb->file, position);
+	const long r = cdb->ops.seek(cdb->file, position + cdb->ops.offset);
 	if (r >= 0)
 		cdb->position = position;
 	return cdb_error(cdb, r < 0 ? CDB_ERROR_SEEK_E : CDB_OK_E);
@@ -420,8 +421,7 @@ fail:
 	(void)cdb_free_resources(cdb);
 	return CDB_ERROR_E;
 }
-
-int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, const int create, const char *file) {
+int cdb_open(cdb_t **cdb, const cdb_options_t *ops, const int create, const char *file) {
 	/* We could allow the word size of the CDB database {16, 32 (default) or 64}
 	 * to be configured at run time and not compile time, this has API related
 	 * consequences, the size of 'cdb_word_t' would determine maximum size that
@@ -440,11 +440,9 @@ int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, const int create, const ch
 	*cdb = NULL;
 	if (create && CDB_WRITE_ON == 0)
 		return CDB_ERROR_E;
-	/*TODO: auto-select size if ops->size == 0, changed comment in header
-	 * to reflect this */
-	if (ops->size != 16 && ops->size != 32 && ops->size != 64)
+	if (ops->size != 0 && ops->size != 16 && ops->size != 32 && ops->size != 64)
 		return CDB_ERROR_SIZE_E;
-	if (ops->size > (sizeof(cdb_word_t) * CHAR_BIT))
+	if (ops->size != 0 && ops->size > (sizeof(cdb_word_t) * CHAR_BIT))
 		return CDB_ERROR_SIZE_E;
 	cdb_t *c = NULL;
 	const int large = CDB_MEMORY_INDEX_ON || create;
@@ -454,7 +452,7 @@ int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, const int create, const ch
 		goto fail;
 	memset(c, 0, csz);
 	c->ops         = *ops;
-	c->ops.size   /= CHAR_BIT;
+	c->ops.size    = c->ops.size    ? c->ops.size / CHAR_BIT : (32ul / CHAR_BIT);
 	c->ops.hash    = c->ops.hash    ? c->ops.hash    : cdb_hash;
 	c->ops.compare = c->ops.compare ? c->ops.compare : cdb_memory_compare;
 	c->create      = create;
@@ -542,13 +540,14 @@ static int cdb_compare(cdb_t *cdb, const cdb_buffer_t *k1, const cdb_file_pos_t 
 	return CDB_FOUND_E; /* equal */
 }
 
-static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, long *record) {
+static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, long *record, int next) {
 	assert(cdb);
 	assert(cdb->opened);
 	assert(cdb->ops.hash);
 	assert(key);
 	assert(value);
 	assert(record);
+	cdb_word_t pos = 0, num = 0, h = 0;
 	long wanted = *record, recno = 0;
 	*record = 0;
 	*value = (cdb_file_pos_t) { 0, 0 };
@@ -558,26 +557,26 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 		(void)cdb_error(cdb, CDB_ERROR_MODE_E);
 		goto fail;
 	}
-	/* locate key in first table */
-	const cdb_word_t h = cdb->ops.hash((uint8_t *)(key->buffer), key->length) & cdb_get_mask(cdb);
-	cdb_word_t pos = 0, num = 0;
-
-	if (CDB_MEMORY_INDEX_ON) { /* use more memory (~4KiB) to speed up first match */
-		cdb_hash_table_t *t = &cdb->table1[h % BUCKETS];
-		pos = t->header.position;
-		num = t->header.length;
-	} else {
-		if (cdb_seek_internal(cdb, cdb->file_start + ((h % BUCKETS) * (2ul * cdb_get_size(cdb)))) < 0)
-			goto fail;
-		if (cdb_read_word_pair(cdb, &pos, &num) < 0)
+	if (next == 0 || cdb->next_start == 0) {
+		h = cdb->ops.hash((uint8_t *)(key->buffer), key->length) & cdb_get_mask(cdb); /* locate key in first table */
+		if (CDB_MEMORY_INDEX_ON) { /* use more memory (~4KiB) to speed up first match */
+			cdb_hash_table_t *t = &cdb->table1[h % BUCKETS];
+			pos = t->header.position;
+			num = t->header.length;
+		} else {
+			if (cdb_seek_internal(cdb, cdb->file_start + ((h % BUCKETS) * (2ul * cdb_get_size(cdb)))) < 0)
+				goto fail;
+			if (cdb_read_word_pair(cdb, &pos, &num) < 0)
+				goto fail;
+		}
+		if (num == 0) /* no keys in this bucket -> key not found */
+			return cdb_status(cdb) < 0 ? CDB_ERROR_E : CDB_NOT_FOUND_E;
+		if (cdb_bound_check(cdb, pos > cdb->file_end || pos < cdb->hash_start) < 0)
 			goto fail;
 	}
-	if (num == 0) /* no keys in this bucket -> key not found */
-		return cdb_status(cdb) < 0 ? CDB_ERROR_E : CDB_NOT_FOUND_E;
-	if (cdb_bound_check(cdb, pos > cdb->file_end || pos < cdb->hash_start) < 0)
-		goto fail;
-	const cdb_word_t start = (h >> NBUCKETS) % num;
-	for (cdb_word_t i = 0; i < num; i++) {
+	const cdb_word_t start = next ? cdb->next_start : (h >> NBUCKETS) % num;
+	num = next ? cdb->next_i : num;
+	for (cdb_word_t i = next ? cdb->next_i : 0; i < num; i++) {
 		const cdb_word_t seekpos = pos + (((start + i) % num) * (2ul * cdb_get_size(cdb)));
 		if (seekpos < pos || seekpos > cdb->file_end)
 			goto fail;
@@ -588,8 +587,11 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 			goto fail;
 		if (cdb_bound_check(cdb, p1 > cdb->hash_start) < 0) /* key-value pair should not overlap with hash tables section */
 			goto fail;
-		if (p1 == 0) /* end of list */ {
-			*record = recno;
+		if (p1 == 0) { /* end of list */
+			*record         = recno;
+			cdb->next_i     = 0;
+			cdb->next_start = 0;
+			cdb->next_num   = 0;
 			return cdb_status(cdb) < 0 ? CDB_ERROR_E : CDB_NOT_FOUND_E;
 		}
 		if (cdb_hash_check(cdb, (h1 & 0xFFul) != (h & 0xFFul)) < 0) /* buckets bits should be the same */
@@ -617,16 +619,25 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 					goto fail;
 				if (cdb_bound_check(cdb, (v2.position + v2.length) > cdb->hash_start) < 0)
 					goto fail;
-				*record = recno;
-				*value = v2;
+				*value          = v2;
+				*record         = recno;
+				cdb->next_i     = i + 1ul;
+				cdb->next_start = start;
+				cdb->next_num   = num;
 				return cdb_status(cdb) < 0 ? CDB_ERROR_E : CDB_FOUND_E;
 			}
 			recno += found;
 		}
 	}
-	*record = recno;
+	*record         = recno;
+	cdb->next_i     = 0;
+	cdb->next_start = 0;
+	cdb->next_num   = 0;
 	return cdb_status(cdb) < 0 ? CDB_ERROR_E : CDB_NOT_FOUND_E;
 fail:
+	cdb->next_i     = 0;
+	cdb->next_start = 0;
+	cdb->next_num   = 0;
 	return cdb_error(cdb, CDB_ERROR_E);
 }
 
@@ -635,7 +646,7 @@ int cdb_get_record(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, l
 	assert(cdb->opened);
 	assert(key);
 	assert(value);
-	return cdb_retrieve(cdb, key, value, &record);
+	return cdb_retrieve(cdb, key, value, &record, 0);
 }
 
 int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value) {
@@ -653,10 +664,19 @@ int cdb_get_count(cdb_t *cdb, const cdb_buffer_t *key, long *count) {
 	assert(count);
 	cdb_file_pos_t value = { 0, 0 };
 	long c = LONG_MAX;
-	const int r = cdb_retrieve(cdb, key, &value, &c);
+	const int r = cdb_retrieve(cdb, key, &value, &c, 0);
 	c = r == CDB_FOUND_E ? c + 1l : c;
 	*count = c;
 	return r;
+}
+
+int cdb_next(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value) { /* TODO: Test this */
+	assert(cdb);
+	assert(cdb->opened);
+	assert(key);
+	assert(value);
+	long c = LONG_MAX;
+	return cdb_retrieve(cdb, key, value, &c, 1);
 }
 
 int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
@@ -666,8 +686,6 @@ int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
 	if (cdb->error || cdb->create)
 		goto fail;
 	cdb_word_t pos = cdb->file_start + (256ul * (2ul * cdb_get_size(cdb)));
-	if (cdb_seek_internal(cdb, pos) < 0)
-		goto fail;
 	for (;pos < cdb->hash_start;) {
 		if (cdb_seek_internal(cdb, pos) < 0)
 			goto fail;
@@ -771,9 +789,9 @@ static uint64_t xorshift128(uint64_t s[2]) { /* A few rounds of SPECK or TEA cip
 
 #define MAXLEN (1024ul)
 
-/* TODO: Do minimal testing of corrupt images as well to check they are 
+/* TODO: Do minimal testing of corrupt images as well to check they are
  * correctly diagnosed as being invalid. */
-int cdb_tests(const cdb_callbacks_t *ops, const char *test_file) {
+int cdb_tests(const cdb_options_t *ops, const char *test_file) {
 	assert(ops);
 	assert(test_file);
 	BUILD_BUG_ON(sizeof (cdb_word_t) < 2);

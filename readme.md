@@ -57,6 +57,8 @@ and values of a given length.
 
 **-q**  *file.cdb key record-number* : query the database for a key, with an optional record
 
+**-o** number : specify offset into file where database begins
+
 **-H** : hash keys and output their hash
 
 **-g**  : spit out an example database
@@ -428,18 +430,6 @@ TODO:
 
 * [ ] Document a possible file format/header format based on PNG specification,
   document design decisions and improve documentation
-* [ ] Cleanup/Simplify C API and make multiple key retrieval more efficient,
-  perhaps a function like 'cdb\_get\_next\_record' could be made, or the
-  current 'cdb\_get\_record' could be modified.
-* [ ] Remove TODOs before merging 4.0 branch onto master, squashing commits if
-  needed.
-* [ ] Remove the pre-processor typedefs if possible and simplify header,
-  removed unneeded or ugly header functions
-* [ ] Change other projects to incorporate the lessons learned in this one
-  in terms of project organization, how the makefile is structured, the C API,
-  and more.
-* [ ] Generate ctags and hide in '.git' folder. Include makefile itself in
-  list of dependencies.
 * [ ] An option for dumping out keys and their hashes could be made, using
   Unix utilities it would then be possible to construct the database in hash
   value order.
@@ -448,10 +438,11 @@ TODO:
 * [ ] If using CDB purely to test membership of a set then this DB places
   a 4 byte overhead per key which is unneeded. This could be made into an
   option.
-* [ ] Generate larger test files.
 * [ ] Have an option to prevent the addition of duplicate keys?
+* [ ] Add option for space delimited input key/value pairs
 * [ ] Normalize command line options so they are the same as other CDB
   implementations. Also get rid of getopt, it's not really needed.
+* [ ] -H option needs hashing correcting for size.
 * [ ] Change the getopt implementation so it accepts a '#' for a long number
   and does checking no it.
 * [ ] Database only works up to 2GiB on a 32-bit machine, not 4GiB like it
@@ -461,9 +452,10 @@ TODO:
 * [ ] Test the C API in the test suite, make sure it returns errors when it
   should, for example calling *cdb\_read* on a handle opened in write mode and
   the like.
-* [ ] -H option needs hashing correcting for size.
 * [ ] Correct documentation about file format size options (16, 32 & 64 bit
   formats).
+* [ ] To make the code smaller make a foreach-hash-element function, which
+  could help in gathering statistics, dumping hashes, and more.
 
 # BUGS
 

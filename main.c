@@ -277,7 +277,7 @@ static int cdb_dump_keys(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_p
 	char kstr[64+2];
 	kstr[0] = '+';
 	const unsigned kl = num_to_str(kstr + 1, key->length) + 1;
-	kstr[kl]     = ':'; 
+	kstr[kl]     = ':';
 	kstr[kl + 1] = '\0';
 	if (fwrite(kstr, 1, kl + 1, output) != (kl + 1))
 		return -1;
@@ -637,6 +637,7 @@ Options :\n\n\
 \t-T temp.cdb : name of temporary file to use\n\
 \t-V file.cdb : validate database\n\
 \t-q file.cdb key #? : run query for key with optional record number\n\
+\t-o number   : specify offset into file where database begins\n\
 \t-H          : hash keys and output their hash\n\
 \t-g          : spit out an example database\n\
 \t-m number   : set minimum length of generated record\n\
@@ -673,7 +674,7 @@ int main(int argc, char **argv) {
 	if (setvbuf(stdout, obuf, _IOFBF, sizeof obuf) < 0)
 		return -1;
 
-	static cdb_callbacks_t ops = {
+	static cdb_options_t ops = {
 		.allocator = cdb_allocator_cb,
 		.hash      = NULL,
 		.compare   = NULL,
@@ -684,11 +685,12 @@ int main(int argc, char **argv) {
 		.close     = cdb_close_cb,
 		.flush     = cdb_flush_cb,
 		.arena     = NULL,
-		.size      = sizeof (cdb_word_t) * 8,
+		.offset    = 0,
+		.size      = 0, /* auto-select */
 	};
 
 	cdb_getopt_t opt = { .init = 0 };
-	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hHgvt:c:d:k:s:q:V:b:T:m:M:R:S:")) != -1; ) {
+	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hHgvt:c:d:k:s:q:V:b:T:m:M:R:S:o:")) != -1; ) {
 		switch (ch) {
 		case 'h': return help(stdout, argv[0]), 0;
 		case 'H': return hasher(stdin, stdout);
@@ -700,13 +702,14 @@ int main(int argc, char **argv) {
 		case 's': file = opt.arg; mode = STATS;    break;
 		case 'q': file = opt.arg; mode = QUERY;    break;
 		case 'V': file = opt.arg; mode = VALIDATE; break;
-		case 'b': ops.size = atol(opt.arg);        break;
-		case 'g': mode = GENERATE;                 break;
-		case 'T': tmp  = opt.arg;                  break;
-		case 'm': min     = atol(opt.arg);         break;
-		case 'M': max     = atol(opt.arg);         break;
-		case 'R': records = atol(opt.arg);         break;
-		case 'S': seed    = atol(opt.arg);         break;
+		case 'b': ops.size   = atol(opt.arg);      break;
+		case 'g': mode       = GENERATE;           break;
+		case 'T': tmp        = opt.arg;            break;
+		case 'm': min        = atol(opt.arg);      break;
+		case 'M': max        = atol(opt.arg);      break;
+		case 'R': records    = atol(opt.arg);      break;
+		case 'S': seed       = atol(opt.arg);      break;
+		case 'o': ops.offset = atol(opt.arg);      break;
 		default: help(stderr, argv[0]); return 1;
 		}
 	}
@@ -751,7 +754,7 @@ int main(int argc, char **argv) {
 
 	const int cdbe = cdb_get_error(cdb);
 	if (cdb_close(cdb) < 0)
-		die("close failed");
+		die("close failed: %d", cdbe);
 	if (cdbe < 0)
 		die("cdb internal error: %d", cdbe);
 

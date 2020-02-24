@@ -6,7 +6,7 @@ TESTDB=test.cdb;
 EMPTYDB=empty.cdb;
 FAIL=0;
 PERFORMANCE=${PERFORMANCE:-test.cdb};
-#CDB=${CDB:-cdb};
+CDB=${CDB:-cdb};
 
 performance () {
 	set -eux;
@@ -56,20 +56,19 @@ do
 	esac
 done
 
-for CDB in cdb cdb16 cdb32 cdb64; do
+make ${CDB};
+for SIZE in 32 16 64; do
 	set -eux;
 
-	make ${CDB};
-
-	./${CDB} -c ${EMPTYDB} <<EOF
+	./${CDB} -b ${SIZE} -c ${EMPTYDB} <<EOF
 EOF
-	./${CDB} -t bist.cdb;
-	./${CDB} -d bist.cdb | sort > bist.txt;
-	./${CDB} -c copy.cdb -T temp.cdb < bist.txt;
-	./${CDB} -d copy.cdb | sort > copy.txt;
+	./${CDB} -b ${SIZE} -t bist.cdb;
+	./${CDB} -b ${SIZE} -d bist.cdb | sort > bist.txt;
+	./${CDB} -b ${SIZE} -c copy.cdb -T temp.cdb < bist.txt;
+	./${CDB} -b ${SIZE} -d copy.cdb | sort > copy.txt;
 	diff -w bist.txt copy.txt;
 
-	./${CDB} -c ${TESTDB} <<EOF
+	./${CDB} -b ${SIZE} -c ${TESTDB} <<EOF
 +0,1:->X
 +1,0:X->
 +1,1:a->b
@@ -102,17 +101,17 @@ EOF
 		fi;
 	}
 
-	t "./${CDB} -q ${TESTDB} a" b;
-	t "./${CDB} -q ${TESTDB} a 0" b;
-	t "./${CDB} -q ${TESTDB} a 1" b;
-	t "./${CDB} -q ${TESTDB} a 2" c;
-	f "./${CDB} -q ${TESTDB} a 3";
-	t "./${CDB} -q ${TESTDB} X" "";
-	f "./${CDB} -q ${TESTDB} XXX";
-	t "./${CDB} -q ${TESTDB} \"\"" X;
-	t "./${CDB} -q ${TESTDB} b" hello;
-	t "./${CDB} -q ${TESTDB} c" world;
-	t "./${CDB} -q ${TESTDB} open" seasame;
+	t "./${CDB} -b ${SIZE} -q ${TESTDB} a" b;
+	t "./${CDB} -b ${SIZE} -q ${TESTDB} a 0" b;
+	t "./${CDB} -b ${SIZE} -q ${TESTDB} a 1" b;
+	t "./${CDB} -b ${SIZE} -q ${TESTDB} a 2" c;
+	f "./${CDB} -b ${SIZE} -q ${TESTDB} a 3";
+	t "./${CDB} -b ${SIZE} -q ${TESTDB} X" "";
+	f "./${CDB} -b ${SIZE} -q ${TESTDB} XXX";
+	t "./${CDB} -b ${SIZE} -q ${TESTDB} \"\"" X;
+	t "./${CDB} -b ${SIZE} -q ${TESTDB} b" hello;
+	t "./${CDB} -b ${SIZE} -q ${TESTDB} c" world;
+	t "./${CDB} -b ${SIZE} -q ${TESTDB} open" seasame;
 
 	for i in $(seq 0 9); do
 		for j in $(seq 0 9); do
@@ -129,48 +128,28 @@ EOF
 	dd if=/dev/zero of=invalid-2.cdb count=4 # Invalid hash table pointers
 	#dd if=${RANDOMSRC} of=invalid-3.cdb count=512
 
-	f "./${CDB} -s invalid-1.cdb"
-	f "./${CDB} -s invalid-2.cdb"
+	f "./${CDB} -b ${SIZE} -s invalid-1.cdb"
+	f "./${CDB} -b ${SIZE} -s invalid-2.cdb"
 	#f "./${CDB} -s invalid-3.cdb"
-	f "./${CDB} -s /dev/null"
+	f "./${CDB} -b ${SIZE} -s /dev/null"
 
 	set -x
 
-	./${CDB} -c seq.cdb < seq.txt;
-	./${CDB} -d seq.cdb | sort > qes.txt;
+	./${CDB} -b ${SIZE} -c seq.cdb < seq.txt;
+	./${CDB} -b ${SIZE} -d seq.cdb | sort > qes.txt;
 
 	diff -w seq.txt qes.txt;
 
-	./${CDB} -s ${EMPTYDB}
-	./${CDB} -s seq.cdb;
-	./${CDB} -s ${TESTDB}
-	./${CDB} -s bist.cdb;
+	./${CDB} -b ${SIZE} -s ${EMPTYDB}
+	./${CDB} -b ${SIZE} -s seq.cdb;
+	./${CDB} -b ${SIZE} -s ${TESTDB}
+	./${CDB} -b ${SIZE} -s bist.cdb;
+
+	dd if=/dev/zero of=offset.bin count=4 bs=512
+	cat offset.bin test.cdb > offset.cdb
+	./${CDB} -o 2048 -b ${SIZE} -V offset.cdb;
 
 	set +x;
-
-	# # Extra stuff, not used yet as it needs speeding up. A PRNG could
-	# # be made in pure sh to do so, otherwise we are shelling out too much.
-	#
-	# r999 () {
-	# 	echo $(cat ${RANDOMSRC} | tr -dc '0-9' | fold -w 256 | head -n 1 | sed -e 's/^0*//' | head --bytes 3);
-	# }
-	#
-	# rlen() {
-	# 	echo $(cat ${RANDOMSRC} | tr -dc 'a-zA-Z0-9' | fold -w "${1}" | head -n 1)
-	# }
-	#
-	# FILE=rnd
-	# rm -fv "${FILE}.txt ${FILE}.cdb";
-	# for i in $(seq 1 1000); do
-	# 	KLEN=$(r999);
-	# 	VLEN=$(r999);
-	# 	KEY=$(rlen ${KLEN})
-	# 	VALUE=$(rlen ${VLEN})
-	# 	echo "+${KLEN},${VLEN}:${KEY}->${VALUE}" >> ${FILE}.txt
-	# done;
-	#
-	# ./${CDB} -c ${FILE}.cdb < ${FILE}.txt
-
 done;
 
 make clean
