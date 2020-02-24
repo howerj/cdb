@@ -391,8 +391,8 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 			goto end;
 		if (ch1 != '\r')
 			goto fail;
-		if ('\n' != fgetc(input)) { /* TODO: ??? */
-		}
+		if ('\n' != fgetc(input))
+			goto fail;
 	}
 fail:
 	r = -1;
@@ -521,7 +521,7 @@ static int cdb_query(cdb_t *cdb, char *key, int record, FILE *output) {
 	assert(output);
 	const cdb_buffer_t kb = { .length = strlen(key), .buffer = key };
 	cdb_file_pos_t vp = { 0, 0 };
-	const int gr = cdb_get_record(cdb, &kb, &vp, record);
+	const int gr = cdb_lookup(cdb, &kb, &vp, record);
 	if (gr < 0)
 		return -1;
 	if (gr > 0) /* found */
@@ -609,7 +609,7 @@ static int help(FILE *output, const char *arg0) {
 	assert(output);
 	assert(arg0);
 	unsigned long version = 0;
-	if (cdb_get_version(&version) < 0)
+	if (cdb_version(&version) < 0)
 		info("version not set - built incorrectly");
 	const unsigned q = (version >> 24) & 0xff;
 	const unsigned x = (version >> 16) & 0xff;
@@ -752,7 +752,7 @@ int main(int argc, char **argv) {
 		die("unimplemented mode: %d", mode);
 	}
 
-	const int cdbe = cdb_get_error(cdb);
+	const int cdbe = cdb_status(cdb);
 	if (cdb_close(cdb) < 0)
 		die("close failed: %d", cdbe);
 	if (cdbe < 0)

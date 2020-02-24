@@ -145,9 +145,9 @@ EOF
 	./${CDB} -b ${SIZE} -s ${TESTDB}
 	./${CDB} -b ${SIZE} -s bist.cdb;
 
-	dd if=/dev/zero of=offset.bin count=4 bs=512
+	dd if=/dev/zero of=offset.bin count=5 bs=512
 	cat offset.bin test.cdb > offset.cdb
-	./${CDB} -o 2048 -b ${SIZE} -V offset.cdb;
+	./${CDB} -o 2560 -b ${SIZE} -V offset.cdb;
 
 	set +x;
 done;

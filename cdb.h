@@ -43,9 +43,12 @@ typedef struct {
 
 	void *arena;       /* used for 'arena' argument for the allocator, can be NULL if allocator allows it */
 	cdb_word_t offset; /* starting offset for file */
-	/* TODO: merge size/opts */
 	unsigned size;     /* Either 0 (same as 32), 16, 32 or 64, but cannot be bigger than 'sizeof(cdb_word_t)*8' */
-	unsigned opts;     /* TODO: implement duplicate value check, key only options */
+	/* TODO: implement:
+	unsigned duplicates_not_allowed :1, 
+		 key_only :1,
+		 create: 1;
+	*/
 } cdb_options_t; /* a file abstraction layer, could point to memory, flash, or disk */
 
 typedef struct {
@@ -69,11 +72,11 @@ CDB_API int cdb_seek(cdb_t *cdb, cdb_word_t position);
 CDB_API int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param);
 CDB_API int cdb_read_word_pair(cdb_t *cdb, cdb_word_t *w1, cdb_word_t *w2);
 CDB_API int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value);
-CDB_API int cdb_get_record(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, long record);
+CDB_API int cdb_lookup(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, long record);
 CDB_API int cdb_next(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value);
 CDB_API int cdb_count(cdb_t *cdb, const cdb_buffer_t *key, long *count);
-CDB_API int cdb_get_error(cdb_t *cdb);
-CDB_API int cdb_get_version(unsigned long *version); /* version number in x.y.z format, z = LSB, MSB is library info */
+CDB_API int cdb_status(cdb_t *cdb);
+CDB_API int cdb_version(unsigned long *version); /* version number in x.y.z format, z = LSB, MSB is library info */
 CDB_API int cdb_tests(const cdb_options_t *ops, const char *test_file);
 
 #ifdef __cplusplus

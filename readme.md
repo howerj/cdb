@@ -299,8 +299,8 @@ a database requires opening up a new database in create mode:
 
 	/* error handling omitted for brevity */
 	cdb_t *cdb = NULL;
-	cdb_file_operators_t ops = { /* Your file callbacks go here */ };
-	cdb_open(&cdb, &ops, NULL, 1, "example.cdb");
+	cdb_options_t ops = { /* Your file callbacks/options go here */ };
+	cdb_open(&cdb, &ops, 1, "example.cdb");
 	cdb_buffer_t key   = { .length = 5, .buffer = "hello" };
 	cdb_buffer_t value = { .length = 5, .buffer = "world" };
 	cdb_add(cdb, &key, &value);
@@ -327,8 +327,8 @@ read mode (create = 0):
 
 	/* error handling omitted for brevity */
 	cdb_t *cdb = NULL;
-	cdb_file_operators_t ops = { /* Your file callbacks go here */ };
-	cdb_open(&cdb, &ops, NULL, 1, "example.cdb");
+	cdb_options_t ops = { /* Your file callbacks/options go here */ };
+	cdb_open(&cdb, &ops, 1, "example.cdb");
 	cdb_buffer_t key = { .length = 5, .buffer = "hello" };
 	cdb_file_pos_t value = { 0, 0 };
 	cdb_get(cdb, &key, &value);
@@ -344,21 +344,21 @@ handle may be pointing to a different area in the database.
 If a read or a seek is issued that goes outside of the bounds of the database
 then all subsequent database operations on that handle will fail, not just
 reads or seeks. The only valid things to do on a database that has returned a
-negative number is to call 'cdb\_get\_error' and then 'cdb\_close' and never
-use the handle again. 'cdb\_get\_error' must not be used on a closed handle.
+negative number is to call 'cdb\_status' and then 'cdb\_close' and never
+use the handle again. 'cdb\_status' must not be used on a closed handle.
 
-As there are potentially duplicate keys, the function 'cdb\_get\_count' can be
+As there are potentially duplicate keys, the function 'cdb\_count' can be
 used to query for duplicates. It sets the parameter count to the number of
 records found for that key (and it sets count to zero, and returns zero, if no
 keys are found, it returns one if one or more keys were found).
 
-The function 'cdb\_get\_error' can be used to query what error has occurred, if
+The function 'cdb\_status' can be used to query what error has occurred, if
 any. On an error a negative value is returned, the meaning of this value is
 deliberately not included in the header as the errors recorded and the
 meaning of their values may change. Use the source for the library to determine
 what error occurred.
 
-The function 'cdb\_get\_version' returns the version number in an out parameter 
+The function 'cdb\_version' returns the version number in an out parameter 
 and information about the compile time options selected when the library was built. 
 A [Semantic Version Number][] is used, which takes the form "MAJOR.MINOR.PATCH".
 The PATCH number is stored in the Least Significant Byte, the MINOR number the
@@ -428,8 +428,6 @@ The lack of a header might be solved in creative ways as:
 
 TODO:
 
-* [ ] Document a possible file format/header format based on PNG specification,
-  document design decisions and improve documentation
 * [ ] An option for dumping out keys and their hashes could be made, using
   Unix utilities it would then be possible to construct the database in hash
   value order.
@@ -443,8 +441,6 @@ TODO:
 * [ ] Normalize command line options so they are the same as other CDB
   implementations. Also get rid of getopt, it's not really needed.
 * [ ] -H option needs hashing correcting for size.
-* [ ] Change the getopt implementation so it accepts a '#' for a long number
-  and does checking no it.
 * [ ] Database only works up to 2GiB on a 32-bit machine, not 4GiB like it
   could.
 * [ ] Change verify callback so it attempts to find the key in the database
@@ -456,6 +452,8 @@ TODO:
   formats).
 * [ ] To make the code smaller make a foreach-hash-element function, which
   could help in gathering statistics, dumping hashes, and more.
+* [ ] Link to other versions, reference other versions in performance test
+  script 't'.
 
 # BUGS
 
