@@ -220,15 +220,17 @@ static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
 }
 
 static inline void reverse(char * const r, const size_t length) {
+	assert(r);
 	const size_t last = length - 1;
 	for (size_t i = 0; i < length / 2ul; i++) {
-		const size_t t = r[i];
+		const char t = r[i];
 		r[i] = r[last - i];
 		r[last - i] = t;
 	}
 }
 
 static unsigned num_to_str(char b[64], cdb_word_t u) {
+	assert(b);
 	unsigned i = 0;
 	do {
 		const cdb_word_t base = 10; /* bases 2-10 allowed */
@@ -239,6 +241,7 @@ static unsigned num_to_str(char b[64], cdb_word_t u) {
 	} while (u);
 	b[i] = '\0';
 	reverse(b, i);
+	assert(b[i] == '\0');
 	return i;
 }
 

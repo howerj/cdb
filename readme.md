@@ -433,27 +433,12 @@ TODO:
   value order.
 * [ ] Change key dump so if option is specified twice it will dump out hashes
   using the CDB hash function.
-* [ ] If using CDB purely to test membership of a set then this DB places
-  a 4 byte overhead per key which is unneeded. This could be made into an
-  option.
-* [ ] Have an option to prevent the addition of duplicate keys?
-* [ ] Add option for space delimited input key/value pairs
-* [ ] Normalize command line options so they are the same as other CDB
-  implementations. Also get rid of getopt, it's not really needed.
-* [ ] -H option needs hashing correcting for size.
-* [ ] Database only works up to 2GiB on a 32-bit machine, not 4GiB like it
-  could.
-* [ ] Change verify callback so it attempts to find the key in the database
-  in the foreach callback.
-* [ ] Test the C API in the test suite, make sure it returns errors when it
-  should, for example calling *cdb\_read* on a handle opened in write mode and
-  the like.
-* [ ] Correct documentation about file format size options (16, 32 & 64 bit
-  formats).
-* [ ] To make the code smaller make a foreach-hash-element function, which
-  could help in gathering statistics, dumping hashes, and more.
 * [ ] Link to other versions, reference other versions in performance test
   script 't'.
+* [ ] Normalize command line arguments between this version of CDB and other
+  versions if possible.
+* [ ] Test that Out Of Memory conditions are handled correctly with
+  ulimit / disabling overcommit.
 
 # BUGS
 

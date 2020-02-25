@@ -12,6 +12,7 @@ ifeq ($(OS),Windows_NT)
 DLL=dll
 else # Assume Unixen
 DLL=so
+CFLAGS+=-D_FILE_OFFSET_BITS=64 
 endif
 
 .PHONY: all test clean dist install

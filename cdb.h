@@ -44,11 +44,6 @@ typedef struct {
 	void *arena;       /* used for 'arena' argument for the allocator, can be NULL if allocator allows it */
 	cdb_word_t offset; /* starting offset for file */
 	unsigned size;     /* Either 0 (same as 32), 16, 32 or 64, but cannot be bigger than 'sizeof(cdb_word_t)*8' */
-	/* TODO: implement:
-	unsigned duplicates_not_allowed :1, 
-		 key_only :1,
-		 create: 1;
-	*/
 } cdb_options_t; /* a file abstraction layer, could point to memory, flash, or disk */
 
 typedef struct {
