@@ -428,6 +428,8 @@ The lack of a header might be solved in creative ways as:
 
 TODO:
 
+* [ ] Apply lessons learned in this project to others, this is in terms
+  of the makefile, project layout and style.
 * [ ] An option for dumping out keys and their hashes could be made, using
   Unix utilities it would then be possible to construct the database in hash
   value order.
@@ -439,6 +441,7 @@ TODO:
   versions if possible.
 * [ ] Test that Out Of Memory conditions are handled correctly with
   ulimit / disabling overcommit.
+* [ ] Use unlocked stdio? See if this speeds things up a little or not.
 
 # BUGS
 
