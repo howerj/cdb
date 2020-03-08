@@ -1,5 +1,6 @@
 *.1
 *.a
+*.bin
 *.cdb
 *.db
 *.dll
@@ -10,7 +11,4 @@
 *.tmp
 *.txt
 cdb
-cdb16
-cdb32
-cdb64
 install/*

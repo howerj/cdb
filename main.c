@@ -14,10 +14,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef USE_TMPNAM
-#define USE_TMPNAM (0)
-#endif
-
 #define UNUSED(X)      ((void)(X))
 #define MIN(X, Y)      ((X) < (Y) ? (X) : (Y))
 #define MAX(X, Y)      ((X) > (Y) ? (X) : (Y))
@@ -50,6 +46,12 @@ typedef struct {
 	char *place; /* internal use: scanner position */
 	int  init;   /* internal use: initialized or not */
 } cdb_getopt_t;      /* getopt clone; with a few modifications */
+
+typedef struct {
+	FILE *handle;
+	size_t length;
+	char buffer[];
+} file_t;
 
 static unsigned verbose = 0;
 
@@ -149,53 +151,64 @@ static void *cdb_allocator_cb(void *arena, void *ptr, const size_t oldsz, const 
 static cdb_word_t cdb_read_cb(void *file, void *buf, size_t length) {
 	assert(file);
 	assert(buf);
-	return fread(buf, 1, length, (FILE*)file);
+	return fread(buf, 1, length, ((file_t*)file)->handle);
 }
 
 static cdb_word_t cdb_write_cb(void *file, void *buf, size_t length) {
 	assert(file);
 	assert(buf);
-	return fwrite(buf, 1, length, (FILE*)file);
+	return fwrite(buf, 1, length, ((file_t*)file)->handle);
 }
 
-static int cdb_seek_cb(void *file, long offset, long whence) {
+static int cdb_seek_cb(void *file, long offset) {
 	assert(file);
-	switch (whence) {
-	case CDB_SEEK_START:   whence = SEEK_SET; break;
-	case CDB_SEEK_END:     whence = SEEK_END; break;
-	case CDB_SEEK_CURRENT: whence = SEEK_CUR; break;
-	default:
-		return -1;
-	}
-	return fseek((FILE*)file, offset, whence);
+	return fseek(((file_t*)file)->handle, offset, SEEK_SET);
 }
 
 static void *cdb_open_cb(const char *name, int mode) {
 	assert(name);
 	assert(mode == CDB_RO_MODE || mode == CDB_RW_MODE);
 	const char *mode_string = mode == CDB_RW_MODE ? "wb+" : "rb";
-	return fopen(name, mode_string);
+	FILE *f = fopen(name, mode_string);
+	if (!f)
+		return f;
+	const size_t length = 1024ul * 16ul;
+	file_t *fb = malloc(sizeof (*f) + length);
+	if (!fb) {
+		fclose(f);
+		return NULL;
+	}
+	fb->handle = f;
+	fb->length = length;
+	if (setvbuf(f, fb->buffer, _IOFBF, fb->length) < 0) {
+		fclose(f);
+		free(fb);
+		return NULL;
+	}
+	return fb;
 }
 
 static int cdb_close_cb(void *file) {
 	assert(file);
-	return fclose((FILE*)file);
+	const int r = fclose(((file_t*)file)->handle);
+	free(file);
+	return r;
 }
 
 static int cdb_flush_cb(void *file) {
 	assert(file);
-	return fflush((FILE*)file);
+	return fflush(((file_t*)file)->handle);
 }
 
 static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
 	assert(cdb);
 	assert(fp);
 	assert(output);
-	if (cdb_seek(cdb, fp->position, CDB_SEEK_START) < 0)
+	if (cdb_seek(cdb, fp->position) < 0)
 		return -1;
 	char buf[IO_BUFFER_SIZE];
 	const size_t length = fp->length;
-	for (size_t i = 0; i < length; i += sizeof buf) {
+	for (size_t i = 0; i < length; i += sizeof buf) { /* NB. Double buffering! */
 		const size_t l = length - i;
 		assert(l <= sizeof buf);
 		if (cdb_read(cdb, buf, MIN(sizeof buf, l)) < 0)
@@ -207,15 +220,17 @@ static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
 }
 
 static inline void reverse(char * const r, const size_t length) {
+	assert(r);
 	const size_t last = length - 1;
 	for (size_t i = 0; i < length / 2ul; i++) {
-		const size_t t = r[i];
+		const char t = r[i];
 		r[i] = r[last - i];
 		r[last - i] = t;
 	}
 }
 
 static unsigned num_to_str(char b[64], cdb_word_t u) {
+	assert(b);
 	unsigned i = 0;
 	do {
 		const cdb_word_t base = 10; /* bases 2-10 allowed */
@@ -226,6 +241,7 @@ static unsigned num_to_str(char b[64], cdb_word_t u) {
 	} while (u);
 	b[i] = '\0';
 	reverse(b, i);
+	assert(b[i] == '\0');
 	return i;
 }
 
@@ -264,7 +280,7 @@ static int cdb_dump_keys(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_p
 	char kstr[64+2];
 	kstr[0] = '+';
 	const unsigned kl = num_to_str(kstr + 1, key->length) + 1;
-	kstr[kl]     = ':'; 
+	kstr[kl]     = ':';
 	kstr[kl + 1] = '\0';
 	if (fwrite(kstr, 1, kl + 1, output) != (kl + 1))
 		return -1;
@@ -315,10 +331,6 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 	assert(cdb);
 	assert(input);
 
-	char ibuf[BUFSIZ];
-	if (setvbuf(input, ibuf, _IOFBF, sizeof ibuf) < 0)
-		return -1;
-
 	int r = 0;
 	size_t kmlen = IO_BUFFER_SIZE, vmlen = IO_BUFFER_SIZE;
 	char *key = malloc(kmlen);
@@ -330,7 +342,7 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 		cdb_word_t klen = 0, vlen = 0;
 		char sep[2] = { 0 };
 		const int first = fgetc(input);
-		if (first == EOF)
+		if (first == EOF) /* || first == '\n' {need to handle '\r' as well} */
 			goto end;
 		if (isspace(first))
 			continue;
@@ -347,6 +359,7 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 			kmlen = klen;
 			key = t;
 		}
+
 		if (vmlen < vlen) {
 			char *t = realloc(value, vlen);
 			if (!t)
@@ -354,11 +367,13 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 			vmlen = vlen;
 			value = t;
 		}
+
 		if (fread(key, 1, klen, input) != klen)
 			goto fail;
 
 		if (fread(sep, 1, sizeof sep, input) != sizeof sep)
 			goto fail;
+
 		if (sep[0] != '-' || sep[1] != '>')
 			goto fail;
 
@@ -367,9 +382,9 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 
 		const cdb_buffer_t kb = { .length = klen, .buffer = key };
 		const cdb_buffer_t vb = { .length = vlen, .buffer = value };
+
 		if (cdb_add(cdb, &kb, &vb) < 0) {
 			(void)fprintf(stderr, "cdb file add failed\n");
-			//remove(file);
 			goto fail;
 		}
 		const int ch1 = fgetc(input);
@@ -379,8 +394,8 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 			goto end;
 		if (ch1 != '\r')
 			goto fail;
-		if ('\n' != fgetc(input)) {
-		}
+		if ('\n' != fgetc(input))
+			goto fail;
 	}
 fail:
 	r = -1;
@@ -406,7 +421,7 @@ static int cdb_stats(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t
 	return 0;
 }
 
-static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
+static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose, size_t bytes) {
 	assert(cdb);
 	assert(output);
 	unsigned long distances[DISTMAX] = { 0 };
@@ -421,13 +436,12 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 	if (cdb_foreach(cdb, cdb_stats, &s) < 0)
 		return -1;
 
-	if (verbose) {
+	if (verbose)
 		if (fputs("Initial hash table: \n", output) < 0)
 			return -1;
-	}
 
 	for (size_t i = 0; i < 256; i++) {
-		if (cdb_seek(cdb, i * (2u * sizeof (cdb_word_t)), CDB_SEEK_START) < 0)
+		if (cdb_seek(cdb, i * (2u * bytes)) < 0)
 			return -1;
 		cdb_word_t pos = 0, num = 0;
 		if (cdb_read_word_pair(cdb, &pos, &num) < 0)
@@ -446,28 +460,29 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 		hmax        = MAX(num, hmax);
 		if (num)
 			hmin = MIN(num, hmin);
-		if (cdb_seek(cdb, pos, CDB_SEEK_START) < 0)
+		if (cdb_seek(cdb, pos) < 0)
 			return -1;
-		for (size_t i = 0; i < num; i++) {
+		for (size_t j = 0; j < num; j++) {
 			cdb_word_t h = 0, p = 0;
 			if (cdb_read_word_pair(cdb, &h, &p) < 0)
 				return -1;
 			if (!p)
 				continue;
 			h = (h >> 8) % num;
-			if (h == i) {
+			if (h == j) {
 				h = 0;
 			} else {
-				h = h < i ? i - h : num - h + i;
+				h = h < j ? j - h : num - h + j;
 				h = MIN(h, DISTMAX - 1ul);
 			}
 			distances[h]++;
 		}
 	}
-	if (verbose) {
+
+	if (verbose)
 		if (fputs("\n\n", output) < 0)
 			return -1;
-	}
+
 	if (s.records == 0) {
 		s.min_key_length = 0;
 		s.min_value_length = 0;
@@ -494,6 +509,7 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose) {
 		return -1;
 	if (fputs("hash table distances:\n", output) < 0)
 		return -1;
+
 	for (size_t i = 0; i < DISTMAX; i++) {
 		const double pct = s.records ? ((double)distances[i] / (double)s.records) * 100.0 : 0.0;
 		if (fprintf(output, "\td%u%s %4lu %5.2g%%\n", (unsigned)i, i == DISTMAX - 1ul ? "+:" : ": ", distances[i], pct) < 0)
@@ -508,7 +524,7 @@ static int cdb_query(cdb_t *cdb, char *key, int record, FILE *output) {
 	assert(output);
 	const cdb_buffer_t kb = { .length = strlen(key), .buffer = key };
 	cdb_file_pos_t vp = { 0, 0 };
-	const int gr = cdb_get_record(cdb, &kb, &vp, record);
+	const int gr = cdb_lookup(cdb, &kb, &vp, record);
 	if (gr < 0)
 		return -1;
 	if (gr > 0) /* found */
@@ -516,7 +532,7 @@ static int cdb_query(cdb_t *cdb, char *key, int record, FILE *output) {
 	return 2; /* not found */
 }
 
-static int cdb_null_cb(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param) {
+static int cdb_verify_cb(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param) {
 	UNUSED(cdb);
 	UNUSED(key);
 	UNUSED(value);
@@ -524,18 +540,86 @@ static int cdb_null_cb(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos
 	return 0;
 }
 
+static uint64_t xorshift128(uint64_t s[2]) { /* A few rounds of SPECK or TEA ciphers also make good PRNG */
+	assert(s);
+	if (!s[0] && !s[1])
+		s[0] = 1;
+	uint64_t a = s[0];
+	const uint64_t b = s[1];
+	s[0] = b;
+	a ^= a << 23;
+	a ^= a >> 18;
+	a ^= b;
+	a ^= b >>  5;
+	s[1] = a;
+	return a + b;
+}
+
+static int generate(FILE *output, unsigned long records, unsigned long min, unsigned long max, unsigned long seed) {
+	assert(output);
+	uint64_t s[2] = { seed, 0 };
+	if (max == 0)
+		max = 1024;
+	if (min > max)
+		min = max;
+	if ((max + min) > max)
+		return -1;
+	for (uint64_t i = 0; i < records; i++) {
+		const unsigned long kl = (xorshift128(s) % (max + min)) + min; /* adds bias but so what fight me */
+		const unsigned long vl = (xorshift128(s) % (max + min)) + min;
+		if (fprintf(output, "+%lu,%lu:", kl, vl) < 0)
+			return -1;
+		for (unsigned long j = 0; j < kl; j++)
+			if (fputc('a' + (xorshift128(s) % 26), output) < 0)
+				return -1;
+		if (fputs("->", output) < 0)
+			return -1;
+		for (unsigned long j = 0; j < vl; j++)
+			if (fputc('a' + (xorshift128(s) % 26), output) < 0)
+				return -1;
+		if (fputc('\n', output) < 0)
+			return -1;
+	}
+	if (fputc('\n', output) < 0)
+		return -1;
+	return 0;
+}
+
+/* This is not 'djb2' hash - the character is xor'ed in and not added. */
+static inline uint32_t djb_hash(const uint8_t *s, const size_t length) {
+	assert(s);
+	uint32_t h = 5381ul;
+	for (size_t i = 0; i < length; i++)
+		h = ((h << 5ul) + h) ^ s[i]; /* (h * 33) xor c */
+	return h;
+}
+
+static int hasher(FILE *input, FILE *output) { /* should really input keys in "+length:key\n" format */
+	assert(input);
+	assert(output);
+	char line[512] = { 0 }; /* long enough for everyone right? */
+	for (; fgets(line, sizeof line, input); line[0] = 0) {
+		size_t l = strlen(line);
+		if (l && line[l-1] == '\n')
+			line[l--] = 0;
+		if (fprintf(output, "0x%08lx\n", (unsigned long)djb_hash((uint8_t*)line, l)) < 0)
+			return -1;
+	}
+	return 0;
+}
+
 static int help(FILE *output, const char *arg0) {
 	assert(output);
 	assert(arg0);
 	unsigned long version = 0;
-	if (cdb_get_version(&version) < 0)
+	if (cdb_version(&version) < 0)
 		info("version not set - built incorrectly");
 	const unsigned q = (version >> 24) & 0xff;
 	const unsigned x = (version >> 16) & 0xff;
 	const unsigned y = (version >>  8) & 0xff;
 	const unsigned z = (version >>  0) & 0xff;
 	static const char *usage = "\
-Usage   : %s -hv *OR* -[rcdkstVT] file.cdb *OR* -q file.cdb key [record#]\n\
+Usage   : %s -hv *OR* -[rcdkstVT] file.cdb *OR* -q file.cdb key [record#] *OR* -g *OR* -H\n\
 Program : Constant Database Driver (clone of https://cr.yp.to/cdb.html)\n\
 Author  : Richard James Howe\n\
 Email   : howe.r.j.89@gmail.com\n\
@@ -555,7 +639,14 @@ Options :\n\n\
 \t-t file.cdb : run internal tests generating a test file\n\
 \t-T temp.cdb : name of temporary file to use\n\
 \t-V file.cdb : validate database\n\
-\t-q file.cdb key #? : run query for key with optional record number\n\n\
+\t-q file.cdb key #? : run query for key with optional record number\n\
+\t-o number   : specify offset into file where database begins\n\
+\t-H          : hash keys and output their hash\n\
+\t-g          : spit out an example database\n\
+\t-m number   : set minimum length of generated record\n\
+\t-M number   : set maximum length of generated record\n\
+\t-R number   : set number of generated records\n\
+\t-S number   : set seed for record generation\n\n\
 In create mode the key input format is:\n\n\
 \t+key-length,value-length:key->value\n\n\
 An example:\n\n\
@@ -570,30 +661,43 @@ is an error.\n\
 }
 
 int main(int argc, char **argv) {
-	enum { QUERY, DUMP, CREATE, STATS, KEYS, VALIDATE };
+	enum { QUERY, DUMP, CREATE, STATS, KEYS, VALIDATE, GENERATE, };
 	const char *file = NULL;
-	char tname[L_tmpnam] = { 0 }, *tmp = NULL;
+	char *tmp = NULL;
 	int mode = VALIDATE, creating = 0;
+	unsigned long min = 0ul, max = 1024ul, records = 1024ul, seed = 0ul;
 
 	binary(stdin);
 	binary(stdout);
 	binary(stderr);
 
-	static const cdb_callbacks_t ops = {
+	static char ibuf[BUFSIZ], obuf[BUFSIZ];
+	if (setvbuf(stdin, ibuf, _IOFBF, sizeof ibuf) < 0)
+		return -1;
+	if (setvbuf(stdout, obuf, _IOFBF, sizeof obuf) < 0)
+		return -1;
+
+	static cdb_options_t ops = {
 		.allocator = cdb_allocator_cb,
+		.hash      = NULL,
+		.compare   = NULL,
 		.read      = cdb_read_cb,
 		.write     = cdb_write_cb,
 		.seek      = cdb_seek_cb,
 		.open      = cdb_open_cb,
 		.close     = cdb_close_cb,
 		.flush     = cdb_flush_cb,
+		.arena     = NULL,
+		.offset    = 0,
+		.size      = 0, /* auto-select */
 	};
 
 	cdb_getopt_t opt = { .init = 0 };
-	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hvt:c:d:k:s:q:V:T:")) != -1; ) {
+	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hHgvt:c:d:k:s:q:V:b:T:m:M:R:S:o:")) != -1; ) {
 		switch (ch) {
 		case 'h': return help(stdout, argv[0]), 0;
-		case 't': return -cdb_tests(&ops, NULL, opt.arg);
+		case 'H': return hasher(stdin, stdout);
+		case 't': return -cdb_tests(&ops, opt.arg);
 		case 'v': verbose++;                       break;
 		case 'c': file = opt.arg; mode = CREATE;   break;
 		case 'd': file = opt.arg; mode = DUMP;     break;
@@ -601,33 +705,36 @@ int main(int argc, char **argv) {
 		case 's': file = opt.arg; mode = STATS;    break;
 		case 'q': file = opt.arg; mode = QUERY;    break;
 		case 'V': file = opt.arg; mode = VALIDATE; break;
-		case 'T': tmp = opt.arg;                   break;
+		case 'b': ops.size   = atol(opt.arg);      break;
+		case 'g': mode       = GENERATE;           break;
+		case 'T': tmp        = opt.arg;            break;
+		case 'm': min        = atol(opt.arg);      break;
+		case 'M': max        = atol(opt.arg);      break;
+		case 'R': records    = atol(opt.arg);      break;
+		case 'S': seed       = atol(opt.arg);      break;
+		case 'o': ops.offset = atol(opt.arg);      break;
 		default: help(stderr, argv[0]); return 1;
 		}
 	}
+
+	if (mode == GENERATE)
+		return generate(stdout, records, min, max, seed);
 
 	if (!file)
 		return help(stderr, argv[0]), 1;
 
 	creating = mode == CREATE;
 
-	if (USE_TMPNAM && creating && !tmp) {
-		errno = 0;
-		if (!tmpnam(tname))
-			die("temporary file name generation failed: %s", strerror(errno));
-		info("temporary file name: %s", tname);
-		tmp = tname;
-	}
-
 	cdb_t *cdb = NULL;
 	errno = 0;
 	const char *name = creating && tmp ? tmp : file;
 	info("opening '%s' for %s", name, creating ? "writing" : "reading");
 
-	if (cdb_open(&cdb, &ops, NULL, creating, name) < 0) {
-		const char *stre = strerror(errno);
-		const char *mstr = creating ? "create" : "read";
-		die("opening file '%s' in %s mode failed: %s", name, mstr, stre);
+	errno = 0;
+	if (cdb_open(&cdb, &ops, creating, name) < 0) {
+		const char *f = errno ? strerror(errno) : "unknown";
+		const char *m = creating ? "create" : "read";
+		die("opening file '%s' in %s mode failed: %s", name, m, f);
 	}
 
 	int r = 0;
@@ -635,8 +742,8 @@ int main(int argc, char **argv) {
 	case CREATE:   r = cdb_create(cdb, stdin);                                                       break;
 	case DUMP:     r = cdb_foreach(cdb, cdb_dump,      stdout); if (fputc('\n', stdout) < 0) r = -1; break;
 	case KEYS:     r = cdb_foreach(cdb, cdb_dump_keys, stdout); if (fputc('\n', stdout) < 0) r = -1; break;
-	case STATS:    r = cdb_stats_print(cdb, stdout, 0);                                              break;
-	case VALIDATE: r = cdb_foreach(cdb, cdb_null_cb, NULL);                                          break;
+	case STATS:    r = cdb_stats_print(cdb, stdout, 0, ops.size / 8ul);                              break;
+	case VALIDATE: r = cdb_foreach(cdb, cdb_verify_cb, NULL);                                        break;
 	case QUERY: {
 		if (opt.index >= argc)
 			die("-q opt requires key (and optional record number)");
@@ -648,11 +755,11 @@ int main(int argc, char **argv) {
 		die("unimplemented mode: %d", mode);
 	}
 
-	const int cdbe = cdb_get_error(cdb);
+	const int cdbe = cdb_status(cdb);
 	if (cdb_close(cdb) < 0)
-		die("Close/Finalize failed");
+		die("close failed: %d", cdbe);
 	if (cdbe < 0)
-		die("CDB internal error: %d", cdbe);
+		die("cdb internal error: %d", cdbe);
 
 	if (creating && tmp) {
 		info("renaming temporary file");

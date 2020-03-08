@@ -12,6 +12,10 @@ cdb -\[cdkstV\] file.cdb
 
 cdb -q file.cdb key \[record#\]
 
+cdb -g -M minimum -M maximum -R records -S seed
+
+cdb -H
+
 # DESCRIPTION
 
 	Author:     Richard James Howe
@@ -24,9 +28,16 @@ The database library is designed so it can be embedded into a microcontroller
 if needed. This program can be used for creating and querying CDB databases,
 which consist of key-value pairs of binary data.
 
+This program also includes several options that help in testing out the
+database, one for hashing input keys and printing the hash for the default hash
+function and another one for generating a database with (Pseudo-)random keys
+and values of a given length.
+
 # OPTIONS
 
 **-h** : print out this help message and exit successfully
+
+**-b** : set the size of the CDB database to use (default is 32, can be 16 or 64)
 
 **-v**: increase verbosity level
 
@@ -46,6 +57,19 @@ which consist of key-value pairs of binary data.
 
 **-q**  *file.cdb key record-number* : query the database for a key, with an optional record
 
+**-o** number : specify offset into file where database begins
+
+**-H** : hash keys and output their hash
+
+**-g**  : spit out an example database
+
+**-m** number   : set minimum length of generated record
+
+**-M** number   : set maximum length of generated record
+
+**-R** number   : set number of generated records
+
+**-S** number   : set seed for record generation
 
 # EXAMPLES
 
@@ -125,7 +149,7 @@ pairs in the format "key value", with one record per line and optional comment
 lines:
 
 	#!/bin/sh
-	awk '
+	LC_ALL='C' awk '
 	  /^[^#]/ {
 	    print "+" length($1) "," length($2) ":" $1 "->" $2
 	  }
@@ -275,8 +299,8 @@ a database requires opening up a new database in create mode:
 
 	/* error handling omitted for brevity */
 	cdb_t *cdb = NULL;
-	cdb_file_operators_t ops = { /* Your file callbacks go here */ };
-	cdb_open(&cdb, &ops, NULL, 1, "example.cdb");
+	cdb_options_t ops = { /* Your file callbacks/options go here */ };
+	cdb_open(&cdb, &ops, 1, "example.cdb");
 	cdb_buffer_t key   = { .length = 5, .buffer = "hello" };
 	cdb_buffer_t value = { .length = 5, .buffer = "world" };
 	cdb_add(cdb, &key, &value);
@@ -303,8 +327,8 @@ read mode (create = 0):
 
 	/* error handling omitted for brevity */
 	cdb_t *cdb = NULL;
-	cdb_file_operators_t ops = { /* Your file callbacks go here */ };
-	cdb_open(&cdb, &ops, NULL, 1, "example.cdb");
+	cdb_options_t ops = { /* Your file callbacks/options go here */ };
+	cdb_open(&cdb, &ops, 1, "example.cdb");
 	cdb_buffer_t key = { .length = 5, .buffer = "hello" };
 	cdb_file_pos_t value = { 0, 0 };
 	cdb_get(cdb, &key, &value);
@@ -320,21 +344,21 @@ handle may be pointing to a different area in the database.
 If a read or a seek is issued that goes outside of the bounds of the database
 then all subsequent database operations on that handle will fail, not just
 reads or seeks. The only valid things to do on a database that has returned a
-negative number is to call 'cdb\_get\_error' and then 'cdb\_close' and never
-use the handle again. 'cdb\_get\_error' must not be used on a closed handle.
+negative number is to call 'cdb\_status' and then 'cdb\_close' and never
+use the handle again. 'cdb\_status' must not be used on a closed handle.
 
-As there are potentially duplicate keys, the function 'cdb\_get\_count' can be
+As there are potentially duplicate keys, the function 'cdb\_count' can be
 used to query for duplicates. It sets the parameter count to the number of
 records found for that key (and it sets count to zero, and returns zero, if no
 keys are found, it returns one if one or more keys were found).
 
-The function 'cdb\_get\_error' can be used to query what error has occurred, if
+The function 'cdb\_status' can be used to query what error has occurred, if
 any. On an error a negative value is returned, the meaning of this value is
 deliberately not included in the header as the errors recorded and the
 meaning of their values may change. Use the source for the library to determine
 what error occurred.
 
-The function 'cdb\_get\_version' returns the version number in an out parameter 
+The function 'cdb\_version' returns the version number in an out parameter 
 and information about the compile time options selected when the library was built. 
 A [Semantic Version Number][] is used, which takes the form "MAJOR.MINOR.PATCH".
 The PATCH number is stored in the Least Significant Byte, the MINOR number the
@@ -389,6 +413,18 @@ interpreter, or for serving static content in the [eweb][] web-server.
 All of these would add complexity, and more code - making it more useful
 to some and less to others. As such, apart from bugs, the library and test
 driver programs should be considered complete.
+
+The lack of a header might be solved in creative ways as:
+
+* The integrity of most of the file can be checked by making sure all pointers are
+  within bounds, that key-value pairs are stored one after another and that
+  each key is in the right bucket for that hash. The only things not checked
+  would be the values (they would still have to be of the right length).
+* If a file successfully passes a verification it can be identified as a valid
+  CDB file of that size, this means we would not need to store header
+  information about the file type and structure.
+* We could place the header within the key-value section of the database, or
+  even at the end of the file.
 
 # BUGS
 
