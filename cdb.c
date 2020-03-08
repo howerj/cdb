@@ -76,9 +76,11 @@ struct cdb { /* constant database handle: for all your querying needs! */
 	       file_end,       /* end position of database in file, if known, zero otherwise */
 	       hash_start;     /* start of secondary hash tables near end of file, if known, zero otherwise */
 	cdb_word_t position;   /* read/write/seek position: be careful with this variable! */
-	cdb_word_t next_i,     /* previously found match: position in hash table */
+	cdb_word_t next_i,     /* previously found match: iteration in hash table */
 		   next_num,   /* previously found match: number of elements in hash table */
-		   next_start; /* previously found match: start of */
+		   next_pos,   /* previously found match: previously found position */
+		   next_start, /* previously found match: start of */
+		   next_h;     /* previously found match: start of */
 	int error;             /* error, if any, any error causes database to be invalid */
 	unsigned create  :1,   /* have we opened database up in create mode? */
 		 opened  :1,   /* have we successfully opened up the database? */
@@ -577,7 +579,9 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 		table = (h >> NBUCKETS) % num;
 	}
 	const cdb_word_t start = next ? cdb->next_start : table;
-	num = next ? cdb->next_i : num;
+	num = next ? cdb->next_i   : num;
+	pos = next ? cdb->next_pos : pos;
+	h   = next ? cdb->next_h   : h;
 	for (cdb_word_t i = next ? cdb->next_i : 0; i < num; i++) {
 		const cdb_word_t seekpos = pos + (((start + i) % num) * (2ul * cdb_get_size(cdb)));
 		if (seekpos < pos || seekpos > cdb->file_end)
@@ -592,8 +596,10 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 		if (p1 == 0) { /* end of list */
 			*record         = recno;
 			cdb->next_i     = 0;
+			cdb->next_pos   = 0;
 			cdb->next_start = 0;
 			cdb->next_num   = 0;
+			cdb->next_h     = 0;
 			return cdb_failure(cdb) < 0 ? CDB_ERROR_E : CDB_NOT_FOUND_E;
 		}
 		if (cdb_hash_check(cdb, (h1 & 0xFFul) != (h & 0xFFul)) < 0) /* buckets bits should be the same */
@@ -613,7 +619,7 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 			const int found = comp > 0;
 			if (comp < 0)
 				goto fail;
-			if (found && recno == wanted) { /* found key, correct record? */
+			if (found && (next || recno == wanted)) { /* found key, correct record? */
 				cdb_file_pos_t v2 = { .length = vlen, .position = k2.position + klen };
 				if (cdb_overflow_check(cdb, (v2.position + v2.length) < v2.position) < 0)
 					goto fail;
@@ -626,6 +632,8 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 				cdb->next_i     = i + 1ul;
 				cdb->next_start = start;
 				cdb->next_num   = num;
+				cdb->next_pos   = pos;
+				cdb->next_h     = h;
 				return cdb_failure(cdb) < 0 ? CDB_ERROR_E : CDB_FOUND_E;
 			}
 			recno += found;
@@ -635,11 +643,15 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 	cdb->next_i     = 0;
 	cdb->next_start = 0;
 	cdb->next_num   = 0;
+	cdb->next_pos   = 0;
+	cdb->next_h     = 0;
 	return cdb_failure(cdb) < 0 ? CDB_ERROR_E : CDB_NOT_FOUND_E;
 fail:
 	cdb->next_i     = 0;
 	cdb->next_start = 0;
 	cdb->next_num   = 0;
+	cdb->next_pos   = 0;
+	cdb->next_h     = 0;
 	return cdb_error(cdb, CDB_ERROR_E);
 }
 
@@ -672,7 +684,7 @@ int cdb_count(cdb_t *cdb, const cdb_buffer_t *key, long *count) {
 	return r;
 }
 
-int cdb_next(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value) { /* TODO: Test this */
+int cdb_next(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value) {
 	assert(cdb);
 	assert(cdb->opened);
 	assert(key);
@@ -881,6 +893,7 @@ int cdb_tests(const cdb_options_t *ops, const char *test_file) {
 			goto fail;
 	}
 
+
 	if (cdb_close(cdb) < 0) {
 		(void)ops->allocator(ops->arena, ts, 0, 0);
 		return -1;
@@ -891,6 +904,35 @@ int cdb_tests(const cdb_options_t *ops, const char *test_file) {
 		(void)ops->allocator(ops->arena, ts, 0, 0);
 		return -1;
 	}
+
+#if 1
+	{
+		char *kstr = "FSF", *rstr = "Collide-3";
+		const cdb_buffer_t key   = { .length = strlen(kstr), .buffer = kstr, };
+		cdb_file_pos_t discard = { 0, 0 }, result = { 0, 0 };
+		char tresult[512] = { 0 };
+		if (cdb_get(cdb, &key, &discard) < 0) {
+			r = -2;
+			goto fail;
+		}
+		if (cdb_next(cdb, &key, &result) < 0) {
+			r = -2;
+			goto fail;
+		}
+		if (result.length > (sizeof(tresult) - 1))
+			goto fail;
+		if (result.length != strlen(rstr)) {
+			r = -9;
+		} else {
+			if (cdb_seek_internal(cdb, result.position) < 0)
+				goto fail;
+			if (cdb_read_internal(cdb, tresult, result.length) != result.length)
+				goto fail;
+			if (memcmp(tresult, rstr, result.length))
+				r = -6;
+		}
+	}
+#endif
 
 	for (unsigned i = 0; i < (vectors + dupcnt); i++) {
 		test_t *t = &ts[i];
