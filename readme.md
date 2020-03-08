@@ -426,23 +426,6 @@ The lack of a header might be solved in creative ways as:
 * We could place the header within the key-value section of the database, or
   even at the end of the file.
 
-TODO:
-
-* [ ] Apply lessons learned in this project to others, this is in terms
-  of the makefile, project layout and style.
-* [ ] An option for dumping out keys and their hashes could be made, using
-  Unix utilities it would then be possible to construct the database in hash
-  value order.
-* [ ] Change key dump so if option is specified twice it will dump out hashes
-  using the CDB hash function.
-* [ ] Link to other versions, reference other versions in performance test
-  script 't'.
-* [ ] Normalize command line arguments between this version of CDB and other
-  versions if possible.
-* [ ] Test that Out Of Memory conditions are handled correctly with
-  ulimit / disabling overcommit.
-* [ ] Use unlocked stdio? See if this speeds things up a little or not.
-
 # BUGS
 
 For any bugs, email the [author][]. It comes with a 'works on my machine
