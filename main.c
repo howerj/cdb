@@ -705,14 +705,14 @@ int main(int argc, char **argv) {
 		case 's': file = opt.arg; mode = STATS;    break;
 		case 'q': file = opt.arg; mode = QUERY;    break;
 		case 'V': file = opt.arg; mode = VALIDATE; break;
-		case 'b': ops.size   = atol(opt.arg);      break;
+		case 'b': assert(opt.arg); ops.size  = atol(opt.arg); break;
 		case 'g': mode       = GENERATE;           break;
 		case 'T': tmp        = opt.arg;            break;
-		case 'm': min        = atol(opt.arg);      break;
-		case 'M': max        = atol(opt.arg);      break;
-		case 'R': records    = atol(opt.arg);      break;
-		case 'S': seed       = atol(opt.arg);      break;
-		case 'o': ops.offset = atol(opt.arg);      break;
+		case 'm': assert(opt.arg); min        = atol(opt.arg); break;
+		case 'M': assert(opt.arg); max        = atol(opt.arg); break;
+		case 'R': assert(opt.arg); records    = atol(opt.arg); break;
+		case 'S': assert(opt.arg); seed       = atol(opt.arg); break;
+		case 'o': assert(opt.arg); ops.offset = atol(opt.arg); break;
 		default: help(stderr, argv[0]); return 1;
 		}
 	}

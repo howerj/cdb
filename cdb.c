@@ -10,12 +10,8 @@
 #include <string.h>
 #include <limits.h>
 
-#ifndef CDB_SIZE
-#define CDB_SIZE (32ul)
-#endif
-
 #ifndef CDB_VERSION
-#define CDB_VERSION (0x000000ul) /* all zeros = built incorrectly */
+#define CDB_VERSION (0x000000ul) /* all zeros = built incorrectly (set in makefile) */
 #endif
 
 #ifndef CDB_TESTS_ON
@@ -283,7 +279,10 @@ int cdb_read_word_pair(cdb_t *cdb, cdb_word_t *w1, cdb_word_t *w2) {
 	assert(w1);
 	assert(w2);
 	const size_t l = cdb_get_size(cdb);
-	uint8_t b[2ul * sizeof(cdb_word_t)];
+	/* we only need to set this to 'b' to a value to avoid static checkers
+	 * signalling a problem, 'b' should be written to be
+	 * 'cdb_read_internal' before it is used. */
+	uint8_t b[2ul * sizeof(cdb_word_t)] = { 0 };
 	const long r = cdb_read_internal(cdb, b, 2ul * l);
 	if (r != (long)(2l * l))
 		return -1;

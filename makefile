@@ -1,6 +1,6 @@
 # CDB makefile - default target should build everything
 #
-VERSION =0x040300ul
+VERSION =0x040301ul
 CFLAGS  =-Wall -Wextra -fPIC -std=c99 -O2 -pedantic -fwrapv -DCDB_VERSION="${VERSION}" ${DEFINES} ${EXTRA} 
 TARGET  =cdb
 AR      =ar
@@ -31,6 +31,8 @@ lib${TARGET}.${DLL}: ${TARGET}.o ${TARGET}.h
 	${CC} ${CFLAGS} -shared ${TARGET}.o -o $@
 
 ${TARGET}: main.o lib${TARGET}.a
+	${CC} $^ -o $@
+	-strip ${TARGET}
 
 test: ${TARGET}
 	./${TARGET} -t test.cdb
@@ -59,21 +61,4 @@ dist: install
 clean: .git
 	git clean -dffx
 
-cdb64: DEFINES=-DCDB_SIZE=64
-cdb64: main.c ${TARGET}.c ${TARGET}.h
-	${CC} ${CFLAGS} main.c -c -o main.o
-	${CC} ${CFLAGS} ${TARGET}.c -c -o ${TARGET}.o
-	${CC} ${CFLAGS} main.o ${TARGET}.o -o $@
-
-cdb32: DEFINES=-DCDB_SIZE=32
-cdb32: main.c ${TARGET}.c ${TARGET}.h
-	${CC} ${CFLAGS} main.c -c -o main.o
-	${CC} ${CFLAGS} ${TARGET}.c -c -o ${TARGET}.o
-	${CC} ${CFLAGS} main.o ${TARGET}.o -o $@
-
-cdb16: DEFINES=-DCDB_SIZE=16
-cdb16: main.c ${TARGET}.c ${TARGET}.h
-	${CC} ${CFLAGS} main.c -c -o main.o
-	${CC} ${CFLAGS} ${TARGET}.c -c -o ${TARGET}.o
-	${CC} ${CFLAGS} main.o ${TARGET}.o -o $@
 
