@@ -1,6 +1,6 @@
 # CDB makefile - default target should build everything
 #
-VERSION =0x040301ul
+VERSION =0x040302ul
 CFLAGS  =-Wall -Wextra -fPIC -std=c99 -O2 -pedantic -fwrapv -DCDB_VERSION="${VERSION}" ${DEFINES} ${EXTRA} 
 TARGET  =cdb
 AR      =ar
@@ -30,7 +30,7 @@ lib${TARGET}.a: ${TARGET}.o ${TARGET}.h
 lib${TARGET}.${DLL}: ${TARGET}.o ${TARGET}.h
 	${CC} ${CFLAGS} -shared ${TARGET}.o -o $@
 
-${TARGET}: main.o lib${TARGET}.a
+${TARGET}: main.o host.o lib${TARGET}.a
 	${CC} $^ -o $@
 	-strip ${TARGET}
 

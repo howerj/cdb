@@ -35,7 +35,7 @@ typedef struct {
 	cdb_word_t (*hash)(const uint8_t *data, size_t length); /* hash function: NULL defaults to djb hash */
 	int (*compare)(const void *a, const void *b, size_t length); /* key comparison function: NULL defaults to memcmp */
 	cdb_word_t (*read)(void *file, void *buf, size_t length);
-	cdb_word_t (*write)(void *file, void *buf, size_t length); /* (conditionally optional) needed for creation only */
+	cdb_word_t (*write)(void *file, void *buf, size_t length); /* (conditionally optional) needed for db creation only */
 	int (*seek)(void *file, long offset);
 	void *(*open)(const char *name, int mode);
 	int (*close)(void *file);

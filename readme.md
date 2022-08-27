@@ -84,7 +84,7 @@ Creating a database, called 'example.cdb':
 	+5,5:hello->world
 
 Note that zero length keys and values are valid, and that duplicate keys are
-allowed, even keys with the same value, a key with the specified value is
+allowed, even keys with the same value. A key with the specified value is
 created for each duplicate, just like a non-duplicate key.
 
 Looking up values in the created database:
@@ -97,8 +97,6 @@ Looking up values in the created database:
 	./cdb -q example.cdb a 2
 	./cdb -q example.cdb hello
 
-This looks up the keys.
-
 Dumping a database:
 
 	$ ./cdb -d example.cdb
@@ -107,6 +105,10 @@ A database dump can be read straight back in to create another database:
 
 	$ ./cdb -d example.cdb | ./cdb -c should_have_just_used_copy.cdb
 
+Which is not useful in itself, but *assuming* your data (both keys and
+values) is ASCII text with no new lines and NUL characters then you could
+filter out, modify or add in values with the standard Unix command line
+tools.
 
 # RETURN VALUE
 
@@ -199,10 +201,10 @@ A key-value pair is stored as two words containing the key length and the value
 length in that order, then the key, and finally the value.
 
 The hashing algorithm used is similar to [djb2][], but with a minor
-modification that an exclusive or replaces an addition. The algorithm calculates
+modification that an exclusive-or replaces an addition. The algorithm calculates
 hashes of the size of a word, the initial hash value is the special number '5381'.
 The hash is calculated as the current hash value multiplied by 33, to which the
-new byte to be hashes and the result of multiplication under go an exclusive or
+new byte to be hashes and the result of multiplication under go an exclusive-or
 operation. This repeats until all bytes to be hashed are processed. All
 arithmetic operations are unsigned and performed modulo 2 raised to the power
 of 32.
@@ -368,13 +370,154 @@ compile time options.
 There are several things that could be done to speed up the database but this
 would complicate the implementation and the API.
 
+## EMBEDDED SUITABILITY
+
+There are many libraries written in C, for better or worse, as it is the
+lingua franca for software development at the moment. Few of those libraries
+are directly suitable for use in [Embedded systems][] and are much less
+flexible than they could be in general. Embedded systems pose some interesting
+constraints (eschewing allocation via "malloc", lack of a file-system, and
+more). By designing the library for an embedded system we can make a library
+more useful not only for those systems but for hosted systems as well (eg. By
+providing callbacks for the FILE functions we can redirect them to wherever
+we like, the CDB file could be stored remotely and accessed via TCP, or it
+could be stored locally using a normal file, or it could be stored in memory).
+
+There are two sets of functions that should be abstracted out in nearly
+every library, memory allocation (or even better, the caller can pass in
+fixed length structures if possible) and Input/Output functions (including
+logging!). This library does both.
+
+There is one area in which the library is lacking, the I/O functions do not
+yield if there is nothing to read yet, or a write operation is taking too
+long. This does impose constraints on the caller and how the library is used
+(all calls to the library could block for an arbitrary length of time). The
+callbacks could return a status indicating the caller should yield, but
+yielding and restoring state to enable partially completed I/O to finish
+would greatly complicate the library (this would be trivial to implement if
+C had portable coroutines built into the language).
+
+More libraries should be written with this information in mind.
+
+## TEST SUITE
+
+There is a special note that should be mentioned about how the test suite
+is handled as it is important.
+
+It is difficult to make a good API that is easy to use, consistent, and
+difficult to *misuse*. Bad APIs abound in common and critical software
+(names will not be named) and can make an already difficult to use language
+like C even more difficult to use.
+
+One mistake that is often seen is API functionality that is conditional
+upon an macro. This complicates the build system along with every piece of
+software that is dependent on those optional calls. The most common function
+to be optionally compiled in are test suite related functions if they are
+present. For good reason these test suites might need to be removed from builds
+(as they might take up large amounts of space for code even if they are not
+needed, which is at a premium in embedded systems with limited flash memory).
+
+The header often contains code like this:
+
+	#ifdef LIBRARY_UNIT_TESTS
+	int library_unit_tests(void);
+	#endif
+
+And the code like this, in C like pseudo-code:
+
+	#ifdef LIBRARY_UNIT_TESTS
+	int test_function_1(void) {
+		/* might call malloc directly, making this unsuitable
+		to be included in an embedded system */
+		return result;
+	}
+
+	int library_unit_tests(void) {
+		/* tests go here */
+		if (test_function_1() != OK)
+			return FAIL;
+		return PASS;
+	}
+	#endif
+
+
+In order to call this code you need to be aware of the "LIBRARY\_UNIT\_TESTS"
+macro each time the function "library\_unit\_tests" is called, and worse,
+whether or not your library was compiled with that macro enabled resulting
+in link-time errors. Another common mistake is not passing in the functions
+for I/O and allocation to the unit test framework, making it unsuitable for
+embedded use (but that is a common criticism for many C libraries and not
+just unit tests).
+
+Compare this to this libraries way of handling unit tests:
+
+In the header:
+
+	int cdb_tests(const cdb_options_t *ops, const char *test_file);
+
+And the *relevant* bits of code/pseudo-code:
+	
+	static uint64_t xorshift128(uint64_t s[2]) {
+		assert(s);
+		/* XORSHIFT-128 algorithm */
+		return NEXT_PRNG;
+	}
+
+
+	int cdb_tests(const cdb_options_t *ops, const char *test_file) {
+		assert(ops);
+		assert(test_file);
+		BUILD_BUG_ON(sizeof (cdb_word_t) < 2);
+			
+		if (CDB_TESTS_ON == 0)
+			return CDB_OK_E;
+
+		/* LOTS OF TEST CODE NOT SHOWN, some of which 
+		uses "xorshift128". */
+
+		return STATUS;
+	}
+
+There is no "ifdef" surrounding any of the code (using "ifdef" anywhere to
+conditionally execute code is usually a mistake, is only used within the
+project to set default macro values if the macro is not previously
+defined, an acceptable usage).
+
+Two things are important here, the first, all of the Input and Output
+and memory related functions are passed in via the "ops" structure,
+as mentioned. This means that the test code is easy to port and run on
+a microcontroller which might not have a file system (for testing and
+development purposes you might want to run the tests on a microcontroller
+but not keep them in in the final product).
+
+The main difference is the lack of "ifdef" guards, instead if the macro
+"CDB\_TESTS\_ON" is false the function "cdb\_tests" returns "CDB\_OK\_E"
+(there is some debate if the return code should be this, or something
+to indicate the tests are not present, but that is a separate issue, the
+important bit is the return depending on whether the tests are present).
+
+This "if" statement is a *far superior* way of handling optional code in
+general. The caller does not have to worry if the function is present or
+not, as the function will always be present in the library. Not only that,
+but if the tests are not run because the compile time macro "CDB\_TESTS\_ON"
+is false then the compiler will optimize out those tests even on the lowest
+optimization settings (on any decent compiler).
+
+This also has the advantage that the code that is not run still goes
+through the compilation step meaning the code is less likely to be wrong
+when refactoring code. Not only that, but because "xorshift128" which
+"cdb\_tests" depends on, is declared to be static, if "CDB\_TESTS\_ON" is
+false it to will be eliminated from the compiled object file so long as no
+other function calls it.
+
 # BUILD REQUIREMENTS
 
 If you are building the program from the repository at
-<https://github.com/howerj/cdb> you will need [GNU Make][] and a [C Compiler][].
-The library is written in pure [C99][] and should be fairly simple
-to port to another platform. Other [Make][] implementations may work, however
-they have not been tested. [git][] is also used as part of the build system.
+<https://github.com/howerj/cdb> you will need [GNU Make][] and a [C
+Compiler][].  The library is written in pure [C99][] and should be fairly
+simple to port to another platform. Other [Make][] implementations may
+work, however they have not been tested. [git][] is also used as part of
+the build system.
 
 First clone the repository and change directory to the newly clone repository:
 
@@ -384,14 +527,14 @@ First clone the repository and change directory to the newly clone repository:
 Type 'make' to build the *cdb* executable and library.
 
 Type 'make test' to build and run the *cdb* internal tests. The script called
-'t', written in [sh][], does more testing, and tests that the user interface is
-working correctly. 'make dist' is used to create a compressed tar file for
+'t', written in [sh][], does more testing, and tests that the user interface
+is working correctly. 'make dist' is used to create a compressed tar file for
 distribution. 'make install' can be used to install the binaries, however the
 default installation directory (which can be set with the 'DESTDIR' makefile
-variable) installs to a directory called 'install' within the repository - it
-will not actually install anything. Changing 'DESTDIR' to '/usr' should install
-everything properly. [pandoc][] is required to build the manual page for
-installation, which is generated from this [markdown][] file.
+variable) installs to a directory called 'install' within the repository -
+it will not actually install anything. Changing 'DESTDIR' to '/usr' should
+install everything properly. [pandoc][] is required to build the manual page
+for installation, which is generated from this [markdown][] file.
 
 Look at the source file [cdb.c][] to see what compile time options can be
 passed to the compiler to enable and disable features (if code size is a
@@ -426,19 +569,195 @@ The lack of a header might be solved in creative ways as:
 * We could place the header within the key-value section of the database, or
   even at the end of the file.
 
+Things that *should* be done, but have not:
+
+* Fuzzing with [American Fuzzy Lop][] to iron out the most egregious
+bugs, security relevant or otherwise. This has been used on the [pickle][]
+library to great effect and it finds bugs that would not be caught be unit
+testing alone.
+* The current library implements a system for looking up data
+stored to disk, a *system* could be created that does so much more.
+Amongst the things that could be done are:
+  - Using the CDB file format only as a serialization format
+  for an in memory database which would allow key deletion/replacing.
+  - Implementing the [memcached protocol][] to allow remote querying
+  of data.
+There are a few implementation strategies for doing this.
+* Alternatively, just a simple Key-Value store that uses this database
+as a back-end without anything else fancy.
+* Better separation of host code from [main.c][] so it can be
+reused.
+* Changing the library interface so it is a [header only][] C library.
+* Making a set of callbacks to allow an in memory CDB database, useful
+for embedding the database within binaries.
+* Designing a suite of benchmarks for similar databases and implementations
+of CDB, much like <https://docs.huihoo.com/qdbm/benchmark.pdf>.
+
+Porting this to Rust and making a crate for it would be nice,
+[although implementations already exists](https://crates.io/search?q=cdb). 
+Just making bindings for this library would be a good initial step, along
+with other languages.
+
 # BUGS
 
 For any bugs, email the [author][]. It comes with a 'works on my machine
-guarantee'. The code has been written with the intention of being portable, and
-should work on 32-bit and 64-bit machines. It is tested more frequently on a
-64-bit Linux machine, and less frequently on Windows. Please give a
+guarantee'. The code has been written with the intention of being portable,
+and should work on 32-bit and 64-bit machines. It is tested more frequently
+on a 64-bit Linux machine, and less frequently on Windows. Please give a
 detailed bug report (including but not limited to what machine/OS you are
 running on, compiler, compiler version, a failing example test case, etcetera).
+
+# PYTHON IMPLEMENTATION
+
+Available from here
+<https://www.unixuser.org/~euske/doc/cdbinternals/index.html>. It
+probably is the most succinct description and understandable by someone
+not versed in python.
+
+	#!/usr/bin/env python
+
+	# Python implementation of cdb
+
+	# calc hash value with a given key
+	def calc_hash(s):
+	  return reduce(lambda h,c: (((h << 5) + h) ^ ord(c)) & 0xffffffffL, s, 5381)
+
+	# cdbget(fp, basepos, key)
+	def cdbget(fp, pos_header, k):
+	  from struct import unpack
+
+	  r = []
+	  h = calc_hash(k)
+	  
+	  fp.seek(pos_header + (h % 256)*(4+4))
+	  (pos_bucket, ncells) = unpack('<LL', fp.read(4+4))
+	  if ncells == 0: raise KeyError
+
+	  start = (h >> 8) % ncells
+	  for i in range(ncells):
+	    fp.seek(pos_bucket + ((start+i) % ncells)*(4+4))
+	    (h1, p1) = unpack('<LL', fp.read(4+4))
+	    if p1 == 0: raise KeyError
+	    if h1 == h:
+	      fp.seek(p1)
+	      (klen, vlen) = unpack('<LL', fp.read(4+4))
+	      k1 = fp.read(klen)
+	      v1 = fp.read(vlen)
+	      if k1 == k:
+		r.append(v1)
+		break
+	  else:
+	    raise KeyError
+	      
+	  return r
+
+
+	# cdbmake(filename, hash)
+	def cdbmake(f, a):
+	  from struct import pack
+
+	  # write cdb
+	  def write_cdb(fp):
+	    pos_header = fp.tell()
+
+	    # skip header
+	    p = pos_header+(4+4)*256  # sizeof((h,p))*256
+	    fp.seek(p)
+	    
+	    bucket = [ [] for i in range(256) ]
+	    # write data & make hash
+	    for (k,v) in a.iteritems():
+	      fp.write(pack('<LL',len(k), len(v)))
+	      fp.write(k)
+	      fp.write(v)
+	      h = calc_hash(k)
+	      bucket[h % 256].append((h,p))
+	      # sizeof(keylen)+sizeof(datalen)+sizeof(key)+sizeof(data)
+	      p += 4+4+len(k)+len(v)
+
+	    pos_hash = p
+	    # write hashes
+	    for b1 in bucket:
+	      if b1:
+		ncells = len(b1)*2
+		cell = [ (0,0) for i in range(ncells) ]
+		for (h,p) in b1:
+		  i = (h >> 8) % ncells
+		  while cell[i][1]:  # is call[i] already occupied?
+		    i = (i+1) % ncells
+		  cell[i] = (h,p)
+		for (h,p) in cell:
+		  fp.write(pack('<LL', h, p))
+	    
+	    # write header
+	    fp.seek(pos_header)
+	    for b1 in bucket:
+	      fp.write(pack('<LL', pos_hash, len(b1)*2))
+	      pos_hash += (len(b1)*2)*(4+4)
+	    return
+
+	  # main
+	  fp=file(f, "wb")
+	  write_cdb(fp)
+	  fp.close()
+	  return
+
+
+	# cdbmake by python-cdb
+	def cdbmake_true(f, a):
+	  import cdb
+	  c = cdb.cdbmake(f, f+".tmp")
+	  for (k,v) in a.iteritems():
+	    c.add(k,v)
+	  c.finish()
+	  return
+
+
+	# test suite
+	def test(n):
+	  import os
+	  from random import randint
+	  a = {}
+	  def randstr():
+	    return "".join([ chr(randint(32,126)) for i in xrange(randint(1,1000)) ])
+	  for i in xrange(n):
+	    a[randstr()] = randstr()
+	  #a = {"a":"1", "bcd":"234", "def":"567"}
+	  #a = {"a":"1"}
+	  cdbmake("my.cdb", a)
+	  cdbmake_true("true.cdb", a)
+	  # check the correctness
+	  os.system("cmp my.cdb true.cdb")
+
+	  fp = file("my.cdb")
+	  # check if all values are correctly obtained
+	  for (k,v) in a.iteritems():
+	    (v1,) = cdbget(fp, 0, k)
+	    assert v1 == v, "diff: "+repr(k)
+	  # check if nonexistent keys get error
+	  for i in xrange(n*2):
+	    k = randstr()
+	    try:
+	      v = a[k]
+	    except KeyError:
+	      try:
+		cdbget(fp, 0, k)
+		assert 0, "found: "+k
+	      except KeyError:
+		pass
+	  fp.close()
+	  return
+
+	if __name__ == "__main__":
+	  test(1000)
+
+This tests the python version implemented here against another python
+implementation. It only implements the original 32-bit version.
 
 # COPYRIGHT
 
 The libraries, documentation, and the test driver program are licensed under
-the [Unlicense][]. Do what thou wilt.
+the [Unlicense][]. Do what thou wilt. 
 
 [author]: howe.r.j.89@gmail.com
 [main.c]: main.c
@@ -465,3 +784,6 @@ the [Unlicense][]. Do what thou wilt.
 [pickle]: https://github.com/howerj/pickle
 [eweb]: https://github.com/howerj/eweb
 [binary file format]: https://stackoverflow.com/questions/323604
+[memcached protocol]: https://raw.githubusercontent.com/memcached/memcached/master/doc/protocol.txt
+[header only]: https://en.wikipedia.org/wiki/Header-only
+[Embedded systems]: https://en.wikipedia.org/wiki/Embedded_system

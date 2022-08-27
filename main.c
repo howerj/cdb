@@ -655,7 +655,7 @@ Queries are in a similar format:\n\n\
 \t+key-length:key\n\n\
 Binary key/values are allowed, as are duplicate and empty keys/values.\n\
 Returns values of 0 indicate success/found, 2 not found, and anything else\n\
-is an error.\n\
+indicates an error.\n\
 ";
 	return fprintf(output, usage, arg0, x, y, z, q,(int)(sizeof (cdb_word_t) * CHAR_BIT));
 }
