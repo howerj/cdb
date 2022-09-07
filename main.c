@@ -5,6 +5,7 @@
  * Repo:    <https://github.com/howerj/cdb> */
 
 #include "cdb.h"
+#include "host.h"
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
@@ -46,12 +47,6 @@ typedef struct {
 	char *place; /* internal use: scanner position */
 	int  init;   /* internal use: initialized or not */
 } cdb_getopt_t;      /* getopt clone; with a few modifications */
-
-typedef struct {
-	FILE *handle;
-	size_t length;
-	char buffer[];
-} file_t;
 
 static unsigned verbose = 0;
 
@@ -137,69 +132,6 @@ static int cdb_getopt(cdb_getopt_t *opt, const int argc, char *const argv[], con
 	return opt->option; /* dump back option letter */
 }
 
-static void *cdb_allocator_cb(void *arena, void *ptr, const size_t oldsz, const size_t newsz) {
-	UNUSED(arena);
-	if (newsz == 0) {
-		free(ptr);
-		return NULL;
-	}
-	if (newsz > oldsz)
-		return realloc(ptr, newsz);
-	return ptr;
-}
-
-static cdb_word_t cdb_read_cb(void *file, void *buf, size_t length) {
-	assert(file);
-	assert(buf);
-	return fread(buf, 1, length, ((file_t*)file)->handle);
-}
-
-static cdb_word_t cdb_write_cb(void *file, void *buf, size_t length) {
-	assert(file);
-	assert(buf);
-	return fwrite(buf, 1, length, ((file_t*)file)->handle);
-}
-
-static int cdb_seek_cb(void *file, long offset) {
-	assert(file);
-	return fseek(((file_t*)file)->handle, offset, SEEK_SET);
-}
-
-static void *cdb_open_cb(const char *name, int mode) {
-	assert(name);
-	assert(mode == CDB_RO_MODE || mode == CDB_RW_MODE);
-	const char *mode_string = mode == CDB_RW_MODE ? "wb+" : "rb";
-	FILE *f = fopen(name, mode_string);
-	if (!f)
-		return f;
-	const size_t length = 1024ul * 16ul;
-	file_t *fb = malloc(sizeof (*f) + length);
-	if (!fb) {
-		fclose(f);
-		return NULL;
-	}
-	fb->handle = f;
-	fb->length = length;
-	if (setvbuf(f, fb->buffer, _IOFBF, fb->length) < 0) {
-		fclose(f);
-		free(fb);
-		return NULL;
-	}
-	return fb;
-}
-
-static int cdb_close_cb(void *file) {
-	assert(file);
-	const int r = fclose(((file_t*)file)->handle);
-	free(file);
-	return r;
-}
-
-static int cdb_flush_cb(void *file) {
-	assert(file);
-	return fflush(((file_t*)file)->handle);
-}
-
 static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
 	assert(cdb);
 	assert(fp);
@@ -268,7 +200,7 @@ static int cdb_dump(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t 
 		return -1;
 	if (cdb_print(cdb, value, output) < 0)
 		return -1;
-	return fputc('\n', output);
+	return fputc('\n', output) != '\n' ? -1 : 0;
 }
 
 static int cdb_dump_keys(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param) {
@@ -286,7 +218,7 @@ static int cdb_dump_keys(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_p
 		return -1;
 	if (cdb_print(cdb, key, output) < 0)
 		return -1;
-	return fputc('\n', output);
+	return fputc('\n', output) != '\n' ? -1 : 0;
 }
 
 static int str_to_num(const char *s, cdb_word_t *out) {
@@ -437,7 +369,7 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose, size_t bytes) 
 		return -1;
 
 	if (verbose)
-		if (fputs("Initial hash table: \n", output) < 0)
+		if (fputs("Initial hash table:\n", output) < 0)
 			return -1;
 
 	for (size_t i = 0; i < 256; i++) {
@@ -621,10 +553,10 @@ static int help(FILE *output, const char *arg0) {
 	static const char *usage = "\
 Usage   : %s -hv *OR* -[rcdkstVT] file.cdb *OR* -q file.cdb key [record#] *OR* -g *OR* -H\n\
 Program : Constant Database Driver (clone of https://cr.yp.to/cdb.html)\n\
-Author  : Richard James Howe\n\
-Email   : howe.r.j.89@gmail.com\n\
-Repo    : <https://github.com/howerj/cdb>\n\
-License : The Unlicense\n\
+Author  : " CDB_AUTHOR "\n\
+Email   : " CDB_EMAIL "\n\
+Repo    : " CDB_REPO "\n\
+License : " CDB_LICENSE "\n\
 Version : %u.%u.%u\n\
 Options : 0x%x\n\
 Size    : %d\n\
@@ -671,27 +603,14 @@ int main(int argc, char **argv) {
 	binary(stdout);
 	binary(stderr);
 
-	static char ibuf[BUFSIZ], obuf[BUFSIZ];
+	char ibuf[BUFSIZ], obuf[BUFSIZ];
 	if (setvbuf(stdin, ibuf, _IOFBF, sizeof ibuf) < 0)
 		return -1;
 	if (setvbuf(stdout, obuf, _IOFBF, sizeof obuf) < 0)
 		return -1;
 
-	static cdb_options_t ops = {
-		.allocator = cdb_allocator_cb,
-		.hash      = NULL,
-		.compare   = NULL,
-		.read      = cdb_read_cb,
-		.write     = cdb_write_cb,
-		.seek      = cdb_seek_cb,
-		.open      = cdb_open_cb,
-		.close     = cdb_close_cb,
-		.flush     = cdb_flush_cb,
-		.arena     = NULL,
-		.offset    = 0,
-		.size      = 0, /* auto-select */
-	};
-
+	cdb_options_t ops = cdb_host_options; 
+	
 	cdb_getopt_t opt = { .init = 0 };
 	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hHgvt:c:d:k:s:q:V:b:T:m:M:R:S:o:")) != -1; ) {
 		switch (ch) {
@@ -705,9 +624,9 @@ int main(int argc, char **argv) {
 		case 's': file = opt.arg; mode = STATS;    break;
 		case 'q': file = opt.arg; mode = QUERY;    break;
 		case 'V': file = opt.arg; mode = VALIDATE; break;
-		case 'b': assert(opt.arg); ops.size  = atol(opt.arg); break;
-		case 'g': mode       = GENERATE;           break;
-		case 'T': tmp        = opt.arg;            break;
+		case 'g': mode = GENERATE;                 break;
+		case 'T': tmp  = opt.arg;                  break;
+		case 'b': assert(opt.arg); ops.size   = atol(opt.arg); break;
 		case 'm': assert(opt.arg); min        = atol(opt.arg); break;
 		case 'M': assert(opt.arg); max        = atol(opt.arg); break;
 		case 'R': assert(opt.arg); records    = atol(opt.arg); break;
@@ -717,6 +636,7 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	/* TODO: Generate to CDB file is opt.arg present? */
 	if (mode == GENERATE)
 		return generate(stdout, records, min, max, seed);
 
@@ -726,16 +646,16 @@ int main(int argc, char **argv) {
 	creating = mode == CREATE;
 
 	cdb_t *cdb = NULL;
-	errno = 0;
 	const char *name = creating && tmp ? tmp : file;
 	info("opening '%s' for %s", name, creating ? "writing" : "reading");
-
+	const int etmp = errno;
 	errno = 0;
 	if (cdb_open(&cdb, &ops, creating, name) < 0) {
 		const char *f = errno ? strerror(errno) : "unknown";
 		const char *m = creating ? "create" : "read";
 		die("opening file '%s' in %s mode failed: %s", name, m, f);
 	}
+	errno = etmp;
 
 	int r = 0;
 	switch (mode) {
@@ -763,7 +683,6 @@ int main(int argc, char **argv) {
 
 	if (creating && tmp) {
 		info("renaming temporary file");
-		(void)remove(file);
 		if (rename(tmp, file) < 0)
 			die("rename from '%s' to '%s' failed: %s", tmp, file, strerror(errno));
 	}

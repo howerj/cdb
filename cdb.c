@@ -42,6 +42,8 @@
 #define CDB_BUCKETS                 (1ul << CDB_NBUCKETS)
 #define CDB_FILE_START              (0ul)
 
+/* This enumeration is here and not in the header deliberately, it is to
+ * stop error codes becoming part of the API for this library. */
 enum {
 	CDB_OK_E             =   0, /* no error */
 	CDB_NOT_FOUND_E      =   0, /* key: not-found */
@@ -156,6 +158,7 @@ static void cdb_preconditions(cdb_t *cdb) {
 	cdb_assert(cdb->ops.open);
 	cdb_assert(cdb->ops.close);
 	cdb_assert(cdb->ops.seek);
+	cdb_assert(cdb->error <= 0);
 	cdb_implies(cdb->create, cdb->ops.write);
 	/*cdb_assert(cdb->error == 0);*/
 }
@@ -221,7 +224,7 @@ static int cdb_seek_internal(cdb_t *cdb, const cdb_word_t position) {
 			return -1;
 	if (cdb->sought == 1u && cdb->position == position)
 		return cdb_error(cdb, CDB_OK_E);
-	const long r = cdb->ops.seek(cdb->file, position + cdb->ops.offset);
+	const int r = cdb->ops.seek(cdb->file, position + cdb->ops.offset);
 	if (r >= 0) {
 		cdb->position = position;
 		cdb->sought = 1u;
@@ -264,6 +267,8 @@ static cdb_word_t cdb_write(cdb_t *cdb, void *buf, size_t length) {
 	const cdb_word_t n = cdb->position + r;
 	if (cdb_overflow_check(cdb, n < cdb->position) < 0)
 		return 0;
+	if (r != length)
+		return cdb_error(cdb, CDB_ERROR_WRITE_E);
 	cdb->position = n;
 	return r;
 }
@@ -291,8 +296,8 @@ int cdb_read_word_pair(cdb_t *cdb, cdb_word_t *w1, cdb_word_t *w2) {
 	 * signalling a problem, 'b' should be written to be
 	 * 'cdb_read_internal' before it is used. */
 	uint8_t b[2ul * sizeof(cdb_word_t)] = { 0 };
-	const long r = cdb_read_internal(cdb, b, 2ul * l);
-	if (r != (long)(2l * l))
+	const cdb_word_t r = cdb_read_internal(cdb, b, 2ul * l);
+	if (r != (cdb_word_t)(2l * l))
 		return -1;
 	*w1 = cdb_unpack(b, l);
 	*w2 = cdb_unpack(b + l, l);
@@ -546,7 +551,7 @@ static int cdb_compare(cdb_t *cdb, const cdb_buffer_t *k1, const cdb_file_pos_t 
 	return CDB_FOUND_E; /* equal */
 }
 
-static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, long *record) {
+static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, uint64_t *record) {
 	cdb_assert(cdb);
 	cdb_assert(cdb->opened);
 	cdb_assert(cdb->ops.hash);
@@ -554,9 +559,9 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 	cdb_assert(value);
 	cdb_assert(record);
 	cdb_word_t pos = 0, num = 0, h = 0;
-	long wanted = *record, recno = 0;
+	uint64_t wanted = *record, recno = 0;
 	*record = 0;
-	*value = (cdb_file_pos_t) { 0, 0 };
+	*value = (cdb_file_pos_t) { 0, 0, };
 	if (cdb->error)
 		goto fail;
 	if (cdb->create) {
@@ -632,7 +637,7 @@ fail:
 	return cdb_error(cdb, CDB_ERROR_E);
 }
 
-int cdb_lookup(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, long record) {
+int cdb_lookup(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value, uint64_t record) {
 	cdb_assert(cdb);
 	cdb_assert(cdb->opened);
 	cdb_assert(key);
@@ -648,13 +653,13 @@ int cdb_get(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *value) {
 	return cdb_lookup(cdb, key, value, 0l);
 }
 
-int cdb_count(cdb_t *cdb, const cdb_buffer_t *key, long *count) {
+int cdb_count(cdb_t *cdb, const cdb_buffer_t *key, uint64_t *count) {
 	cdb_assert(cdb);
 	cdb_assert(cdb->opened);
 	cdb_assert(key);
 	cdb_assert(count);
-	cdb_file_pos_t value = { 0, 0 };
-	long c = LONG_MAX;
+	cdb_file_pos_t value = { 0, 0, };
+	uint64_t c = UINT64_MAX;
 	const int r = cdb_retrieve(cdb, key, &value, &c);
 	c = r == CDB_FOUND_E ? c + 1l : c;
 	*count = c;
@@ -668,6 +673,7 @@ int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
 	if (cdb->error || cdb->create)
 		goto fail;
 	cdb_word_t pos = cdb->file_start + (256ul * (2ul * cdb_get_size(cdb)));
+	int r = 0;
 	for (;pos < cdb->hash_start;) {
 		if (cdb_seek_internal(cdb, pos) < 0)
 			goto fail;
@@ -680,16 +686,19 @@ int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
 			goto fail;
 		if (cdb_bound_check(cdb, (value.position + value.length) > cdb->hash_start) < 0)
 			goto fail;
-		if (cb(cdb, &key, &value, param) < 0)
+		r = cb(cdb, &key, &value, param);
+		if (r < 0)
 			goto fail;
+		if (r > 0) /* early termination */
+			break;
 		pos = value.position + value.length;
 	}
-	return cdb_failure(cdb);
+	return cdb_failure(cdb) < 0 ? CDB_ERROR_E : r;
 fail:
 	return cdb_error(cdb, CDB_ERROR_E);
 }
 
-static int cdb_round_up(const cdb_word_t x) {
+static int cdb_round_up_to_next_power_of_two(const cdb_word_t x) {
 	cdb_word_t p = 1ul;
 	while (p < x)
 		p <<= 1ul;
@@ -700,10 +709,14 @@ static int cdb_hash_grow(cdb_t *cdb, const cdb_word_t hash, const cdb_word_t pos
 	cdb_assert(cdb);
 	cdb_hash_table_t *t1 = &cdb->table1[hash % CDB_BUCKETS];
 	cdb_word_t *hashes = t1->hashes, *fps = t1->fps;
-	const cdb_word_t next = cdb_round_up(t1->header.length + 1ul);
-	const cdb_word_t cur  = cdb_round_up(t1->header.length);
+	const cdb_word_t next = cdb_round_up_to_next_power_of_two(t1->header.length + 1ul);
+	const cdb_word_t cur  = cdb_round_up_to_next_power_of_two(t1->header.length);
+	if (cdb_overflow_check(cdb, (t1->header.length + 1ul) < t1->header.length) < 0)
+		return CDB_ERROR_E;
 	if (next > cur || t1->header.length == 0) {
 		const cdb_word_t alloc = t1->header.length == 0 ? 1ul : t1->header.length * 2ul;
+		if (cdb_overflow_check(cdb, (t1->header.length * 2ul) < t1->header.length) < 0)
+			return CDB_ERROR_E;
 		if (!(hashes = cdb_reallocate(cdb, t1->hashes, alloc * sizeof (*t1->hashes))))
 			return CDB_ERROR_E;
 		t1->hashes = hashes;
@@ -720,6 +733,14 @@ static int cdb_hash_grow(cdb_t *cdb, const cdb_word_t hash, const cdb_word_t pos
 	return cdb_failure(cdb);
 }
 
+/* Duplicate keys can be added. To prevent this the library could easily be
+ * improved in a backwards compatible way by extending the options structure
+ * to include a new options value that would specify if adding duplicate keys
+ * is allowed (adding values to the end of a structure being backwards
+ * compatible in (most/all?) C ABIs). "cdb_add" would then need to be extended
+ * to check for duplicate keys, which would be the difficult bit, a new lookup
+ * function would need to be designed that could query the partially written
+ * database. */
 int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 	cdb_preconditions(cdb);
 	cdb_assert(cdb->opened);
@@ -735,8 +756,10 @@ int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 		(void)cdb_error(cdb, CDB_ERROR_MODE_E);
 		goto fail;
 	}
+	if (cdb_overflow_check(cdb, (key->length + value->length) < key->length) < 0)
+		goto fail;
 	const cdb_word_t h = cdb->ops.hash((uint8_t*)(key->buffer), key->length) & cdb_get_mask(cdb);
-	if (cdb_hash_grow(cdb, h, cdb->position) < 0)
+		if (cdb_hash_grow(cdb, h, cdb->position) < 0)
 		goto fail;
 	if (cdb_seek_internal(cdb, cdb->position) < 0)
 		goto fail;
@@ -745,8 +768,6 @@ int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value) {
 	if (cdb_write(cdb, key->buffer, key->length) != key->length)
 		goto fail;
 	if (cdb_write(cdb, value->buffer, value->length) != value->length)
-		goto fail;
-	if (cdb_overflow_check(cdb, (key->length + value->length) < key->length) < 0)
 		goto fail;
 	cdb->empty = 0;
 	return cdb_failure(cdb);
@@ -786,7 +807,7 @@ int cdb_tests(const cdb_options_t *ops, const char *test_file) {
 
 	typedef struct {
 		char key[CDB_MAXLEN], value[CDB_MAXLEN], result[CDB_MAXLEN];
-		long recno;
+		uint64_t recno;
 		cdb_word_t klen, vlen;
 	} test_t;
 
@@ -904,7 +925,7 @@ int cdb_tests(const cdb_options_t *ops, const char *test_file) {
 				r = -6;
 		}
 
-		long cnt = 0;
+		uint64_t cnt = 0;
 		if (cdb_count(cdb, &key, &cnt) < 0)
 			goto fail;
 		if (cnt < t->recno)
