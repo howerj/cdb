@@ -54,24 +54,29 @@ static void info(const char *fmt, ...) {
 	assert(fmt);
 	if (verbose == 0)
 		return;
+	FILE *out = stderr;
 	va_list ap;
 	va_start(ap, fmt);
-	(void)vfprintf(stderr, fmt, ap);
+	(void)vfprintf(out, fmt, ap);
 	va_end(ap);
-	(void)fputc('\n', stderr);
+	(void)fputc('\n', out);
+	(void)fflush(out);
 }
 
 static void die(const char *fmt, ...) {
 	assert(fmt);
+	FILE *out = stderr;
 	va_list ap;
 	va_start(ap, fmt);
-	(void)vfprintf(stderr, fmt, ap);
+	(void)vfprintf(out, fmt, ap);
 	va_end(ap);
-	(void)fputc('\n', stderr);
+	(void)fputc('\n', out);
 	exit(EXIT_FAILURE);
 }
 
-/* Adapted from: <https://stackoverflow.com/questions/10404448> */
+/* Adapted from: <https://stackoverflow.com/questions/10404448>, this
+ * could be extended to part out numeric values, and do other things, but
+ * is */
 static int cdb_getopt(cdb_getopt_t *opt, const int argc, char *const argv[], const char *fmt) {
 	assert(opt);
 	assert(fmt);
@@ -464,29 +469,6 @@ static int cdb_query(cdb_t *cdb, char *key, int record, FILE *output) {
 	return 2; /* not found */
 }
 
-static int cdb_verify_cb(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param) {
-	UNUSED(cdb);
-	UNUSED(key);
-	UNUSED(value);
-	UNUSED(param);
-	return 0;
-}
-
-static uint64_t xorshift128(uint64_t s[2]) { /* A few rounds of SPECK or TEA ciphers also make good PRNG */
-	assert(s);
-	if (!s[0] && !s[1])
-		s[0] = 1;
-	uint64_t a = s[0];
-	const uint64_t b = s[1];
-	s[0] = b;
-	a ^= a << 23;
-	a ^= a >> 18;
-	a ^= b;
-	a ^= b >>  5;
-	s[1] = a;
-	return a + b;
-}
-
 static int generate(FILE *output, unsigned long records, unsigned long min, unsigned long max, unsigned long seed) {
 	assert(output);
 	uint64_t s[2] = { seed, 0 };
@@ -497,17 +479,17 @@ static int generate(FILE *output, unsigned long records, unsigned long min, unsi
 	if ((max + min) > max)
 		return -1;
 	for (uint64_t i = 0; i < records; i++) {
-		const unsigned long kl = (xorshift128(s) % (max + min)) + min; /* adds bias but so what fight me */
-		const unsigned long vl = (xorshift128(s) % (max + min)) + min;
+		const unsigned long kl = (cdb_prng(s) % (max + min)) + min; /* adds bias but so what fight me */
+		const unsigned long vl = (cdb_prng(s) % (max + min)) + min;
 		if (fprintf(output, "+%lu,%lu:", kl, vl) < 0)
 			return -1;
 		for (unsigned long j = 0; j < kl; j++)
-			if (fputc('a' + (xorshift128(s) % 26), output) < 0)
+			if (fputc('a' + (cdb_prng(s) % 26), output) < 0)
 				return -1;
 		if (fputs("->", output) < 0)
 			return -1;
 		for (unsigned long j = 0; j < vl; j++)
-			if (fputc('a' + (xorshift128(s) % 26), output) < 0)
+			if (fputc('a' + (cdb_prng(s) % 26), output) < 0)
 				return -1;
 		if (fputc('\n', output) < 0)
 			return -1;
@@ -515,15 +497,6 @@ static int generate(FILE *output, unsigned long records, unsigned long min, unsi
 	if (fputc('\n', output) < 0)
 		return -1;
 	return 0;
-}
-
-/* This is not 'djb2' hash - the character is xor'ed in and not added. */
-static inline uint32_t djb_hash(const uint8_t *s, const size_t length) {
-	assert(s);
-	uint32_t h = 5381ul;
-	for (size_t i = 0; i < length; i++)
-		h = ((h << 5ul) + h) ^ s[i]; /* (h * 33) xor c */
-	return h;
 }
 
 static int hasher(FILE *input, FILE *output) { /* should really input keys in "+length:key\n" format */
@@ -534,7 +507,7 @@ static int hasher(FILE *input, FILE *output) { /* should really input keys in "+
 		size_t l = strlen(line);
 		if (l && line[l-1] == '\n')
 			line[l--] = 0;
-		if (fprintf(output, "0x%08lx\n", (unsigned long)djb_hash((uint8_t*)line, l)) < 0)
+		if (fprintf(output, "0x%08lx\n", (unsigned long)cdb_hash((uint8_t*)line, l)) < 0)
 			return -1;
 	}
 	return 0;
@@ -609,8 +582,8 @@ int main(int argc, char **argv) {
 	if (setvbuf(stdout, obuf, _IOFBF, sizeof obuf) < 0)
 		return -1;
 
-	cdb_options_t ops = cdb_host_options; 
-	
+	cdb_options_t ops = cdb_host_options;
+
 	cdb_getopt_t opt = { .init = 0 };
 	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hHgvt:c:d:k:s:q:V:b:T:m:M:R:S:o:")) != -1; ) {
 		switch (ch) {
@@ -663,7 +636,7 @@ int main(int argc, char **argv) {
 	case DUMP:     r = cdb_foreach(cdb, cdb_dump,      stdout); if (fputc('\n', stdout) < 0) r = -1; break;
 	case KEYS:     r = cdb_foreach(cdb, cdb_dump_keys, stdout); if (fputc('\n', stdout) < 0) r = -1; break;
 	case STATS:    r = cdb_stats_print(cdb, stdout, 0, ops.size / 8ul);                              break;
-	case VALIDATE: r = cdb_foreach(cdb, cdb_verify_cb, NULL);                                        break;
+	case VALIDATE: r = cdb_foreach(cdb, NULL, NULL);                                                 break;
 	case QUERY: {
 		if (opt.index >= argc)
 			die("-q opt requires key (and optional record number)");

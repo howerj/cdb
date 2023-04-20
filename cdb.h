@@ -69,6 +69,9 @@ CDB_API int cdb_status(cdb_t *cdb);
 CDB_API int cdb_version(unsigned long *version); /* version number in x.y.z format, z = LSB, MSB is library info */
 CDB_API int cdb_tests(const cdb_options_t *ops, const char *test_file);
 
+CDB_API uint64_t cdb_prng(uint64_t s[2]); /* "s" is PRNG state, you can set it to any value you like to seed */
+CDB_API cdb_word_t cdb_hash(const uint8_t *data, size_t length); /* hash used by original CDB program */
+
 #ifdef __cplusplus
 }
 #endif

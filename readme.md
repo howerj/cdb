@@ -181,7 +181,7 @@ in that hash table, stored in that order. To lookup a key the key is first
 hashed, the lowest eight bits of the hash are used to index into the initial table
 and if there are values in this hash the search then proceeds to the second hash
 table at the end of the file.
-
+ 
 The hash tables at the end of the file contains an array of two word records,
 containing the full hash and a file position of the key-value pair. To search
 for a key in this table the hash of the key is taken and the lowest eight bits
@@ -274,6 +274,26 @@ the end of the file:
 	P = Position of Key-Value Pair
 
 And that is all for the file format description.
+
+While the keys-value pairs can be streamed to disk and the second level hash
+table written after those keys, anything that creates a database will have
+to seek to the beginning of the file to rewrite the header, this could have
+been avoided by storing the 256 initial hash table results at the end of
+the file allowing a database to be constructed in a Unix filter, but alas,
+this is not possible. Also of note, by passing in a custom hash algorithm to
+the C API you have much more control over where each of the key-value pairs
+get stored, specifically, which bucket they will end up in by controlling
+the lowest 8-bits (for example you could set the lowest 8-bits to the first
+byte in the key in a custom hash).
+
+Note that there is nothing stopping you storing the key-value pairs in
+some kind of order, you could do this by adding the keys in lexicographic
+order for a database sorted by key. Retrieving keys using the C function
+"cdb\_foreach" would allow you retrieve keys in order. The hash table itself
+would remain unaware of this order. Dumping the key-value pairs would maintain
+this order as well. There is no guarantee other tools will preserve this
+order however (they may dump key-value pairs backwards, or by going through
+the hash table). 
 
 # CDB C API OVERVIEW
 
@@ -546,6 +566,9 @@ should not be expected to stay the same between calls.
 
 To read either a key or a value you must call "cdb\_seek" before
 calling "cdb\_read" yourself.
+
+Passing in NULL is allowed and is not a No-Operation, it can be
+used to effectively check the integrity of the database.
 
 * cdb\_read\_word\_pair
 
@@ -1043,7 +1066,9 @@ through the compilation step meaning the code is less likely to be wrong
 when refactoring code. Not only that, but because "xorshift128" which
 "cdb\_tests" depends on, is declared to be static, if "CDB\_TESTS\_ON" is
 false it to will be eliminated from the compiled object file so long as no
-other function calls it.
+other function calls it. In actual fact, the code has changed since
+this has been written and "cdb\_prng" is exposed in the header as it is
+useful in [main.c][], which is equivalent to "xorshift128".
 
 # BUILD REQUIREMENTS
 
@@ -1331,15 +1356,20 @@ the [Unlicense][]. Do what thou wilt.
 
 # TODO
 
-* Talk about improving streaming, why things are done in a certain way
 * Talk about changing the hash algorithm, and perhaps looking up similar
 keys (the two-layer hash algorithm might interfere with this, could be solved
 by setting 8-bits of the hash to zero...)
-* Reuse xorshift128 / add to API, along with hash function?
 * Add maybe match to API? Sort of like a bloom filter. It would just check
   the existence of a potential match and not do the actual disk lookup.
 * You could store the keys sorted if you wanted and do a foreach. You just
 need to add them in a sorted order.
+* In [main.c][] the input is taken from stdin, this could be taken from
+a UDP packet.
+* Talk about improvements to file format; header, moving 256 hash table to
+end of file for streaming, sorting/greater control over database, etcetera.
+* Move version information into [cdb.c][].
+* Perhaps the file access callbacks should be their own structure, so they
+can be reused, much like the generic memory allocator.
 
 [author]: howe.r.j.89@gmail.com
 [main.c]: main.c

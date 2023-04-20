@@ -144,7 +144,7 @@ static int cdb_memory_compare(const void *a, const void *b, size_t length) {
 	return memcmp(a, b, length);
 }
 
-static cdb_word_t cdb_hash(const uint8_t *s, const size_t length) {
+cdb_word_t cdb_hash(const uint8_t *s, const size_t length) {
 	cdb_assert(s);
 	return cdb_djb_hash(s, length);
 }
@@ -555,7 +555,7 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 	cdb_assert(cdb);
 	cdb_assert(cdb->opened);
 	cdb_assert(cdb->ops.hash);
-	cdb_assert(key);
+	cdb_assert(key); /* If key was NULL, we *could* lookup the values instead using cdb_foreach */
 	cdb_assert(value);
 	cdb_assert(record);
 	cdb_word_t pos = 0, num = 0, h = 0;
@@ -669,7 +669,6 @@ int cdb_count(cdb_t *cdb, const cdb_buffer_t *key, uint64_t *count) {
 int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
 	cdb_assert(cdb);
 	cdb_assert(cdb->opened);
-	cdb_assert(cb);
 	if (cdb->error || cdb->create)
 		goto fail;
 	cdb_word_t pos = cdb->file_start + (256ul * (2ul * cdb_get_size(cdb)));
@@ -686,7 +685,7 @@ int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
 			goto fail;
 		if (cdb_bound_check(cdb, (value.position + value.length) > cdb->hash_start) < 0)
 			goto fail;
-		r = cb(cdb, &key, &value, param);
+		r = cb ? cb(cdb, &key, &value, param) : 0;
 		if (r < 0)
 			goto fail;
 		if (r > 0) /* early termination */
@@ -775,7 +774,7 @@ fail:
 	return cdb_error(cdb, CDB_ERROR_E);
 }
 
-static uint64_t cdb_xorshift128(uint64_t s[2]) { /* A few rounds of SPECK or TEA ciphers also make good PRNG */
+uint64_t cdb_prng(uint64_t s[2]) { /* XORSHIFT128: A few rounds of SPECK or TEA ciphers also make good PRNG */
 	cdb_assert(s);
 	if (!s[0] && !s[1])
 		s[0] = 1;
@@ -796,7 +795,7 @@ int cdb_tests(const cdb_options_t *ops, const char *test_file) {
 	cdb_assert(ops);
 	cdb_assert(test_file);
 	CDB_BUILD_BUG_ON(sizeof (cdb_word_t) < 2);
-		
+
 	if (CDB_TESTS_ON == 0) /* See readme.md for description of this and why */
 		return CDB_OK_E;
 
@@ -849,12 +848,12 @@ int cdb_tests(const cdb_options_t *ops, const char *test_file) {
 	for (unsigned i = 0; i < vectors; i++) {
 		char *k = ts[i].key;
 		char *v = ts[i].value;
-		const cdb_word_t kl = (cdb_xorshift128(s) % (klen - 1ul)) + 1ul;
-		const cdb_word_t vl = (cdb_xorshift128(s) % (vlen - 1ul)) + 1ul;
+		const cdb_word_t kl = (cdb_prng(s) % (klen - 1ul)) + 1ul;
+		const cdb_word_t vl = (cdb_prng(s) % (vlen - 1ul)) + 1ul;
 		for (unsigned long j = 0; j < kl; j++)
-			k[j] = 'a' + (cdb_xorshift128(s) % 26);
+			k[j] = 'a' + (cdb_prng(s) % 26);
 		for (unsigned long j = 0; j < vl; j++)
-			v[j] = 'a' + (cdb_xorshift128(s) % 26);
+			v[j] = 'a' + (cdb_prng(s) % 26);
 		const cdb_buffer_t key   = { .length = kl, .buffer = k };
 	       	const cdb_buffer_t value = { .length = vl, .buffer = v };
 		for (unsigned long j = 0; j < i; j++)
