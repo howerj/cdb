@@ -181,7 +181,7 @@ in that hash table, stored in that order. To lookup a key the key is first
 hashed, the lowest eight bits of the hash are used to index into the initial table
 and if there are values in this hash the search then proceeds to the second hash
 table at the end of the file.
- 
+
 The hash tables at the end of the file contains an array of two word records,
 containing the full hash and a file position of the key-value pair. To search
 for a key in this table the hash of the key is taken and the lowest eight bits
@@ -293,7 +293,7 @@ order for a database sorted by key. Retrieving keys using the C function
 would remain unaware of this order. Dumping the key-value pairs would maintain
 this order as well. There is no guarantee other tools will preserve this
 order however (they may dump key-value pairs backwards, or by going through
-the hash table). 
+the hash table).
 
 # CDB C API OVERVIEW
 
@@ -312,7 +312,7 @@ Some of these goals are in conflict, being able to control allocations and
 having minimal dependencies allow the library to be used in an embedded system,
 however it means that in order to do very basic things the user has to
 provide a series of callbacks. The callbacks are simple to implement on a
-hosted system, examples are provided in [main.c][] and [host.c][] in the 
+hosted system, examples are provided in [main.c][] and [host.c][] in the
 project repository, but this means the library is not just read to use.
 
 There are two sets of operations that most users will want to perform; creating
@@ -380,8 +380,8 @@ deliberately not included in the header as the errors recorded and the
 meaning of their values may change. Use the source for the library to determine
 what error occurred.
 
-The function 'cdb\_version' returns the version number in an out parameter 
-and information about the compile time options selected when the library was built. 
+The function 'cdb\_version' returns the version number in an out parameter
+and information about the compile time options selected when the library was built.
 A [Semantic Version Number][] is used, which takes the form "MAJOR.MINOR.PATCH".
 The PATCH number is stored in the Least Significant Byte, the MINOR number the
 next byte up, and the MAJOR in the third byte. The fourth byte contains the
@@ -427,7 +427,7 @@ can be a problem in embedded systems).
 The most complex function that contains the most parameters, "cdb\_open"
 is used to open a connection to a database. A pointer to a handle is
 passed to the first parameter, using the supplied allocation callback
-(passed-in in the "ops" parameter) the function will allocate enough space 
+(passed-in in the "ops" parameter) the function will allocate enough space
 for "cdb\_t" structure, this out-parameter is the database handle. It will
 be set to NULL on failure, which will also be indicated with a negative
 return value on the "cdb\_open" function. Once "cdb\_close" is called on
@@ -457,7 +457,7 @@ library user would like (for example, a simple file present in your file
 system, or a section of flash in an embedded computer). The open callback
 is used by "cdb\_open" and should not be called directly.
 
-The "mode" parameter to the "open" callback will be set to "CDB\_RW\_MODE" if 
+The "mode" parameter to the "open" callback will be set to "CDB\_RW\_MODE" if
 "create" is non-zero, and will be set to "CDB\_RO\_MODE" if it is zero.
 
 CDB\_RW\_MODE is an enumeration that has the value "1", whilst
@@ -499,7 +499,7 @@ function does not call "cdb\_seek", the caller must call "cdb\_seek"
 before calling this function to move the file pointer to the
 desired location before reading. The file pointer will be updated
 to point to after the location that has been read (or more accurately,
-the read callback must do this). This function *does not* return the 
+the read callback must do this). This function *does not* return the
 number of bytes read, instead it returns zero for no error and
 negative if an error condition occurs (a partial read is treated as
 an error).
@@ -582,7 +582,7 @@ read-only database is not discouraged and the file format is well
 documented.
 
 This function does not call "cdb\_seek", that must be called
-before hand to seek to the desired file location. The file position 
+before hand to seek to the desired file location. The file position
 will be updated to point after the two read values.
 
 * cdb\_get
@@ -649,13 +649,13 @@ of necessity).
 * cdb\_count
 
 The "cdb\_count" function counts the number of entries that
-have the same key value. This function requires potentially multiple 
+have the same key value. This function requires potentially multiple
 seeks and reads to compute, so the returned value should be cached if
 you plan on using it again as the value is expensive to calculate.
 
 If the key is not found, a value indicating that will be returned
-and the count argument will be zeroed. If found, the count will 
-be put in the count argument. 
+and the count argument will be zeroed. If found, the count will
+be put in the count argument.
 
 * cdb\_status
 
@@ -676,7 +676,7 @@ on failure. It should not return a positive non-zero value.
 the value in an unsigned long. This may return an error value and a
 zero value if the version has not been set correctly at compile time.
 
-The value is stored in "MAJOR.MINOR.PATH" format, with "PATH" stored 
+The value is stored in "MAJOR.MINOR.PATH" format, with "PATH" stored
 in the Least Significant Byte. This is a semantic version number. If
 the "MAJOR" number has changed then there are potentially breaking
 changes in the API or ABI of this library that have been introduced,
@@ -723,20 +723,20 @@ Let us look at the "cdb\_options\_t" structure:
 	typedef struct {
 		void *(*allocator)(void *arena, void *ptr, size_t oldsz, size_t newsz);
 		cdb_word_t (*hash)(const uint8_t *data, size_t length);
-		int (*compare)(const void *a, const void *b, size_t length); 
+		int (*compare)(const void *a, const void *b, size_t length);
 		cdb_word_t (*read)(void *file, void *buf, size_t length);
 		cdb_word_t (*write)(void *file, void *buf, size_t length);
 		int (*seek)(void *file, uint64_t offset);
 		void *(*open)(const char *name, int mode);
 		int (*close)(void *file);
-		int (*flush)(void *file); 
+		int (*flush)(void *file);
 
 		void *arena;
-		cdb_word_t offset; 
-		unsigned size;    
-	} cdb_options_t; 
+		cdb_word_t offset;
+		unsigned size;
+	} cdb_options_t;
 
-Each member of the structure will need an explanation. 
+Each member of the structure will need an explanation.
 
 ## STRUCTURE CALLBACKS
 
@@ -775,7 +775,7 @@ if reallocating or allocating memory. To free memory set this
 to zero, along with providing a pointer to free. If this is zero
 and the "ptr" is NULL then nothing will happen.
 
-5. The return value 
+5. The return value
 
 This will be NULL on failure if allocating memory or reallocating
 memory and that operation failed. It will be non-NULL on success,
@@ -1014,7 +1014,7 @@ In the header:
 	int cdb_tests(const cdb_options_t *ops, const char *test_file);
 
 And the *relevant* bits of code/pseudo-code:
-	
+
 	static uint64_t xorshift128(uint64_t s[2]) {
 		assert(s);
 		/* XORSHIFT-128 algorithm */
@@ -1026,11 +1026,11 @@ And the *relevant* bits of code/pseudo-code:
 		assert(ops);
 		assert(test_file);
 		BUILD_BUG_ON(sizeof (cdb_word_t) < 2);
-			
+
 		if (CDB_TESTS_ON == 0)
 			return CDB_OK_E;
 
-		/* LOTS OF TEST CODE NOT SHOWN, some of which 
+		/* LOTS OF TEST CODE NOT SHOWN, some of which
 		uses "xorshift128". */
 
 		return STATUS;
@@ -1116,7 +1116,7 @@ that users of it point to the new database and not the old one?
 If you access the database via the command line applications then
 the "[rename][]" function, which is atomic on POSIX systems, will do
 what is needed. This is, a mechanism to swap out the old database with
-a new one without affecting any of the current readers. 
+a new one without affecting any of the current readers.
 
 A rename can be done in C like so:
 
@@ -1189,7 +1189,7 @@ for embedding the database within binaries.
 of CDB, much like <https://docs.huihoo.com/qdbm/benchmark.pdf>.
 
 Porting this to Rust and making a crate for it would be nice,
-[although implementations already exists](https://crates.io/search?q=cdb). 
+[although implementations already exists](https://crates.io/search?q=cdb).
 Just making bindings for this library would be a good initial step, along
 with other languages.
 
@@ -1223,7 +1223,7 @@ not versed in python.
 
 	  r = []
 	  h = calc_hash(k)
-	  
+
 	  fp.seek(pos_header + (h % 256)*(4+4))
 	  (pos_bucket, ncells) = unpack('<LL', fp.read(4+4))
 	  if ncells == 0: raise KeyError
@@ -1243,7 +1243,7 @@ not versed in python.
 		break
 	  else:
 	    raise KeyError
-	      
+
 	  return r
 
 
@@ -1258,7 +1258,7 @@ not versed in python.
 	    # skip header
 	    p = pos_header+(4+4)*256  # sizeof((h,p))*256
 	    fp.seek(p)
-	    
+
 	    bucket = [ [] for i in range(256) ]
 	    # write data & make hash
 	    for (k,v) in a.iteritems():
@@ -1283,7 +1283,7 @@ not versed in python.
 		  cell[i] = (h,p)
 		for (h,p) in cell:
 		  fp.write(pack('<LL', h, p))
-	    
+
 	    # write header
 	    fp.seek(pos_header)
 	    for b1 in bucket:
@@ -1352,10 +1352,11 @@ implementation. It only implements the original 32-bit version.
 # COPYRIGHT
 
 The libraries, documentation, and the test driver program are licensed under
-the [Unlicense][]. Do what thou wilt. 
+the [Unlicense][]. Do what thou wilt.
 
 # TODO
 
+* Abandon this branch's goals, but merge changes.
 * Talk about changing the hash algorithm, and perhaps looking up similar
 keys (the two-layer hash algorithm might interfere with this, could be solved
 by setting 8-bits of the hash to zero...)
@@ -1363,6 +1364,7 @@ by setting 8-bits of the hash to zero...)
   the existence of a potential match and not do the actual disk lookup.
 * You could store the keys sorted if you wanted and do a foreach. You just
 need to add them in a sorted order.
+* Make a generator/iterator instead of a "foreach" loop?
 * In [main.c][] the input is taken from stdin, this could be taken from
 a UDP packet.
 * Talk about improvements to file format; header, moving 256 hash table to
@@ -1370,6 +1372,12 @@ end of file for streaming, sorting/greater control over database, etcetera.
 * Move version information into [cdb.c][].
 * Perhaps the file access callbacks should be their own structure, so they
 can be reused, much like the generic memory allocator.
+* Move many of the functions in "main.c" to another file, so they can be
+reused in other projects. It would be annoying for the consumer to have to
+do it themselves, or reimplement things.
+* Options for making the file checking more lax;
+  - Information can be stored between the different keys/value pairs?
+
 
 [author]: howe.r.j.89@gmail.com
 [main.c]: main.c

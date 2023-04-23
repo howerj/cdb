@@ -71,6 +71,7 @@ static void die(const char *fmt, ...) {
 	(void)vfprintf(out, fmt, ap);
 	va_end(ap);
 	(void)fputc('\n', out);
+	(void)fflush(out);
 	exit(EXIT_FAILURE);
 }
 
@@ -156,7 +157,7 @@ static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
 	return 0;
 }
 
-static inline void reverse(char * const r, const size_t length) {
+static inline void cdb_reverse(char * const r, const size_t length) {
 	assert(r);
 	const size_t last = length - 1;
 	for (size_t i = 0; i < length / 2ul; i++) {
@@ -166,18 +167,20 @@ static inline void reverse(char * const r, const size_t length) {
 	}
 }
 
-static unsigned num_to_str(char b[64], cdb_word_t u) {
+static unsigned cdb_num_to_str(char b[65 /* max int size in base 2, + NUL*/], cdb_word_t u, int base) {
 	assert(b);
+	assert(base >= 2 && base <= 10);
 	unsigned i = 0;
 	do {
-		const cdb_word_t base = 10; /* bases 2-10 allowed */
-		const cdb_word_t q = u % base;
-		const cdb_word_t r = u / base;
+		const cdb_word_t radix = base;
+		const cdb_word_t q = u % radix;
+		const cdb_word_t r = u / radix;
 		b[i++] = q + '0';
 		u = r;
+		assert(i <= 64);
 	} while (u);
 	b[i] = '\0';
-	reverse(b, i);
+	cdb_reverse(b, i);
 	assert(b[i] == '\0');
 	return i;
 }
@@ -190,9 +193,9 @@ static int cdb_dump(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t 
 	FILE *output = param;
 	char kstr[64+1], vstr[64+2];
 	kstr[0] = '+';
-	const unsigned kl = num_to_str(kstr + 1, key->length) + 1;
+	const unsigned kl = cdb_num_to_str(kstr + 1, key->length, 10) + 1;
 	vstr[0] = ',';
-	const unsigned nl = num_to_str(vstr + 1, value->length) + 1;
+	const unsigned nl = cdb_num_to_str(vstr + 1, value->length, 10) + 1;
 	if (fwrite(kstr, 1, kl, output) != kl)
 		return -1;
 	vstr[nl]     = ':';
@@ -213,10 +216,11 @@ static int cdb_dump_keys(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_p
 	assert(key);
 	assert(value);
 	assert(param);
+	UNUSED(value);
 	FILE *output = param;
 	char kstr[64+2];
 	kstr[0] = '+';
-	const unsigned kl = num_to_str(kstr + 1, key->length) + 1;
+	const unsigned kl = cdb_num_to_str(kstr + 1, key->length, 10) + 1;
 	kstr[kl]     = ':';
 	kstr[kl + 1] = '\0';
 	if (fwrite(kstr, 1, kl + 1, output) != (kl + 1))
@@ -226,7 +230,7 @@ static int cdb_dump_keys(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_p
 	return fputc('\n', output) != '\n' ? -1 : 0;
 }
 
-static int str_to_num(const char *s, cdb_word_t *out) {
+static int cdb_str_to_num(const char *s, cdb_word_t *out) {
 	assert(s);
 	cdb_word_t result = 0;
 	int ch = s[0];
@@ -261,7 +265,7 @@ static int scan(FILE *input, cdb_word_t *out, int delim) {
 	} else if (ch != delim) {
 		return -1;
 	}
-	return str_to_num(b, out);
+	return cdb_str_to_num(b, out);
 }
 
 static int cdb_create(cdb_t *cdb, FILE *input) {
@@ -347,6 +351,7 @@ static int cdb_stats(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t
 	assert(key);
 	assert(value);
 	assert(param);
+	UNUSED(cdb);
 	cdb_statistics_t *cs = param;
 	cs->records++;
 	cs->total_key_length   += key->length;
@@ -609,7 +614,7 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	/* TODO: Generate to CDB file is opt.arg present? */
+	/* TODO: Generate to CDB file if opt.arg present? */
 	if (mode == GENERATE)
 		return generate(stdout, records, min, max, seed);
 
