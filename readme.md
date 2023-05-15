@@ -8,7 +8,7 @@ CDB - An interface to the Constant Database Library
 
 cdb -h
 
-cdb -\[cdkstV\] file.cdb
+cdb -\[cdkstVG\] file.cdb
 
 cdb -q file.cdb key \[record#\]
 
@@ -61,7 +61,7 @@ and values of a given length.
 
 **-H** : hash keys and output their hash
 
-**-g**  : spit out an example database
+**-g**  : spit out an example database to standard out
 
 **-m** number   : set minimum length of generated record
 

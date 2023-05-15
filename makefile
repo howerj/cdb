@@ -36,8 +36,10 @@ ${TARGET}: main.o host.o lib${TARGET}.a
 	${CC} $^ -o $@
 	-strip ${TARGET}
 
-test: ${TARGET}
+test.cdb: ${TARGET}
 	./${TARGET} -t test.cdb
+
+test: test.cdb
 
 ${TARGET}.1: readme.md
 	-pandoc -s -f markdown -t man $< -o $@

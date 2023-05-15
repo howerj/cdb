@@ -76,8 +76,8 @@ static void die(const char *fmt, ...) {
 }
 
 /* Adapted from: <https://stackoverflow.com/questions/10404448>, this
- * could be extended to part out numeric values, and do other things, but
- * is */
+ * could be extended to parse out numeric values, and do other things, but
+ * that is not needed here. */
 static int cdb_getopt(cdb_getopt_t *opt, const int argc, char *const argv[], const char *fmt) {
 	assert(opt);
 	assert(fmt);
@@ -157,7 +157,7 @@ static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
 	return 0;
 }
 
-static inline void cdb_reverse(char * const r, const size_t length) {
+static inline void cdb_reverse_char_array(char * const r, const size_t length) {
 	assert(r);
 	const size_t last = length - 1;
 	for (size_t i = 0; i < length / 2ul; i++) {
@@ -167,7 +167,7 @@ static inline void cdb_reverse(char * const r, const size_t length) {
 	}
 }
 
-static unsigned cdb_num_to_str(char b[65 /* max int size in base 2, + NUL*/], cdb_word_t u, int base) {
+static unsigned cdb_number_to_string(char b[65 /* max int size in base 2, + NUL*/], cdb_word_t u, int base) {
 	assert(b);
 	assert(base >= 2 && base <= 10);
 	unsigned i = 0;
@@ -180,7 +180,7 @@ static unsigned cdb_num_to_str(char b[65 /* max int size in base 2, + NUL*/], cd
 		assert(i <= 64);
 	} while (u);
 	b[i] = '\0';
-	cdb_reverse(b, i);
+	cdb_reverse_char_array(b, i);
 	assert(b[i] == '\0');
 	return i;
 }
@@ -193,9 +193,9 @@ static int cdb_dump(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t 
 	FILE *output = param;
 	char kstr[64+1], vstr[64+2];
 	kstr[0] = '+';
-	const unsigned kl = cdb_num_to_str(kstr + 1, key->length, 10) + 1;
+	const unsigned kl = cdb_number_to_string(kstr + 1, key->length, 10) + 1;
 	vstr[0] = ',';
-	const unsigned nl = cdb_num_to_str(vstr + 1, value->length, 10) + 1;
+	const unsigned nl = cdb_number_to_string(vstr + 1, value->length, 10) + 1;
 	if (fwrite(kstr, 1, kl, output) != kl)
 		return -1;
 	vstr[nl]     = ':';
@@ -220,7 +220,7 @@ static int cdb_dump_keys(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_p
 	FILE *output = param;
 	char kstr[64+2];
 	kstr[0] = '+';
-	const unsigned kl = cdb_num_to_str(kstr + 1, key->length, 10) + 1;
+	const unsigned kl = cdb_number_to_string(kstr + 1, key->length, 10) + 1;
 	kstr[kl]     = ':';
 	kstr[kl + 1] = '\0';
 	if (fwrite(kstr, 1, kl + 1, output) != (kl + 1))
@@ -230,7 +230,7 @@ static int cdb_dump_keys(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_p
 	return fputc('\n', output) != '\n' ? -1 : 0;
 }
 
-static int cdb_str_to_num(const char *s, cdb_word_t *out) {
+static int cdb_string_to_number(const char *s, cdb_word_t *out) {
 	assert(s);
 	cdb_word_t result = 0;
 	int ch = s[0];
@@ -265,7 +265,7 @@ static int scan(FILE *input, cdb_word_t *out, int delim) {
 	} else if (ch != delim) {
 		return -1;
 	}
-	return cdb_str_to_num(b, out);
+	return cdb_string_to_number(b, out);
 }
 
 static int cdb_create(cdb_t *cdb, FILE *input) {
@@ -552,7 +552,7 @@ Options :\n\n\
 \t-q file.cdb key #? : run query for key with optional record number\n\
 \t-o number   : specify offset into file where database begins\n\
 \t-H          : hash keys and output their hash\n\
-\t-g          : spit out an example database\n\
+\t-g          : spit out an example database *dump* to standard out\n\
 \t-m number   : set minimum length of generated record\n\
 \t-M number   : set maximum length of generated record\n\
 \t-R number   : set number of generated records\n\
@@ -590,7 +590,7 @@ int main(int argc, char **argv) {
 	cdb_options_t ops = cdb_host_options;
 
 	cdb_getopt_t opt = { .init = 0 };
-	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hHgvt:c:d:k:s:q:V:b:T:m:M:R:S:o:")) != -1; ) {
+	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hHgvt:c:d:k:s:q:V:b:T:m:M:R:S:o:G:")) != -1; ) {
 		switch (ch) {
 		case 'h': return help(stdout, argv[0]), 0;
 		case 'H': return hasher(stdin, stdout);
@@ -614,10 +614,23 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	/* TODO: Generate to CDB file if opt.arg present? */
-	if (mode == GENERATE)
-		return generate(stdout, records, min, max, seed);
+	/* N.B. We could also generate a CDB file directly as well,
+	 * instead of generating a dump, the "generate" function
+	 * would need a rewrite though */
+	if (mode == GENERATE) {
+		int r = generate(stdout, records, min, max, seed);
+		/* Valgrind reports errors (on my setup) when writing to
+		 * stdout and not flushing, the flush is called in the exit
+		 * code and causes an error even though nothing *seems*
+		 * incorrect. */
+		if (fflush(stdout) < 0)
+			r = -1;
+		return r < 0 ? 1 : 0;
+	}
 
+	/* For many of the modes "file" could be "stdout", this works
+	 * for everything bar CREATE mode which will need to seek on
+	 * its output. */
 	if (!file)
 		return help(stderr, argv[0]), 1;
 
@@ -652,6 +665,8 @@ int main(int argc, char **argv) {
 	default:
 		die("unimplemented mode: %d", mode);
 	}
+	if (fflush(stdout) < 0)
+		r = -1;
 
 	const int cdbe = cdb_status(cdb);
 	if (cdb_close(cdb) < 0)
@@ -664,6 +679,6 @@ int main(int argc, char **argv) {
 		if (rename(tmp, file) < 0)
 			die("rename from '%s' to '%s' failed: %s", tmp, file, strerror(errno));
 	}
-	return r;
+	return r < 0 ? 1 : 0;
 }
 

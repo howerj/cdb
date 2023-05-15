@@ -2,7 +2,10 @@
  * Author:  Richard James Howe
  * Email:   howe.r.j.89@gmail.com
  * License: Unlicense
- * Repo:    <https://github.com/howerj/cdb> */
+ * Repo:    <https://github.com/howerj/cdb>
+ *
+ * Consult the "readme.md" file for a detailed description
+ * of the file format and internals. */
 
 #include "cdb.h"
 #include <assert.h>
@@ -789,23 +792,30 @@ uint64_t cdb_prng(uint64_t s[2]) { /* XORSHIFT128: A few rounds of SPECK or TEA 
 	return a + b;
 }
 
-#define CDB_MAXLEN (1024ul)
+#define CDB_TEST_VECTOR_LEN (1024ul)
 
+/* A series of optional unit tests that can be compiled out
+ * of the program, the function will still remain even if the
+ * contents of it are elided. */
 int cdb_tests(const cdb_options_t *ops, const char *test_file) {
 	cdb_assert(ops);
 	cdb_assert(test_file);
 	CDB_BUILD_BUG_ON(sizeof (cdb_word_t) < 2);
 
-	if (CDB_TESTS_ON == 0) /* See readme.md for description of this and why */
+	/* See readme.md for description of this and why this
+	 * is the way it is. Note that if "CDB_TESTS_ON" is
+	 * zero the rest of the code will be removed by the
+	 * compiler though. */
+	if (CDB_TESTS_ON == 0) 
 		return CDB_OK_E;
 
 	const size_t l = ops->size;
-	const size_t vectors = l == 16ul ? 128ul : CDB_MAXLEN;
-	const size_t klen    = l == 16ul ?  64ul : CDB_MAXLEN;
-	const size_t vlen    = l == 16ul ?  64ul : CDB_MAXLEN;
+	const size_t vectors = l == 16ul ? 128ul : CDB_TEST_VECTOR_LEN;
+	const size_t klen    = l == 16ul ?  64ul : CDB_TEST_VECTOR_LEN;
+	const size_t vlen    = l == 16ul ?  64ul : CDB_TEST_VECTOR_LEN;
 
 	typedef struct {
-		char key[CDB_MAXLEN], value[CDB_MAXLEN], result[CDB_MAXLEN];
+		char key[CDB_TEST_VECTOR_LEN], value[CDB_TEST_VECTOR_LEN], result[CDB_TEST_VECTOR_LEN];
 		uint64_t recno;
 		cdb_word_t klen, vlen;
 	} test_t;
