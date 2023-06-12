@@ -1162,11 +1162,14 @@ The lack of a header might be solved in creative ways as:
   would be the values (they would still have to be of the right length).
 * If a file successfully passes a verification it can be identified as a valid
   CDB file of that size, this means we would not need to store header
-  information about the file type and structure.
+  information about the file type and structure. This has been verified
+  experimentally (the empty and randomly generated databases of a different
+  size do not pass verification when the incorrect size is specified with
+  the "-b" option).
 * We could place the header within the key-value section of the database, or
   even at the end of the file.
 
-Things that *should* be done, but have not:
+Things that *should* and *could* be done, but have not:
 
 * Fuzzing with [American Fuzzy Lop][] to iron out the most egregious
 bugs, security relevant or otherwise. This has been used on the [pickle][]
@@ -1177,8 +1180,13 @@ stored to disk, a *system* could be created that does so much more.
 Amongst the things that could be done are:
   - Using the CDB file format only as a serialization format
   for an in memory database which would allow key deletion/replacing.
+  This Key-Value store would essentially just be an in memory hash
+  table with a fancy name, backed by this library. The project could
+  be done as part of this library or as a separate project.
   - Implementing the [memcached protocol][] to allow remote querying
   of data.
+  - Alternatively make a custom protocol that accept commands over
+  UDP.
 There are a few implementation strategies for doing this.
 * Alternatively, just a simple Key-Value store that uses this database
 as a back-end without anything else fancy.
@@ -1193,6 +1201,51 @@ Porting this to Rust and making a crate for it would be nice,
 Just making bindings for this library would be a good initial step, along
 with other languages.
 
+For more things that are possible to do:
+
+* The API supplies a for-each loop mechanism where the user supplies a
+callback, an iterator based solution would be more flexible (but slightly
+more error prone to use).
+* The user can specify their own hash algorithm, using one with perhaps
+better characteristics for their purposes (and breaking compatibility
+with the original format). One interesting possibility is using a hashing
+algorithm that maximizes collisions of similar keys, so similar keys are
+grouped together which may be useful when iterating over the database. 
+Unfortunately the initial 256 wide bucket system interferes with this, 
+which could be remedied by returning zero for lowest eight bits, degrading 
+performance. It is not really viable to do this with this system, but
+hashing algorithms that maximize collisions, such as [SOUNDEX][], are
+interesting and deserve a mention. This could be paired with a user
+supplied comparison function for comparing the keys themselves.
+* The callbacks for the file access words ("open", "read", ...) deserve
+their own structure so it can be reused, as the allocator can, although
+it may require some changes to how those functions work (such as different
+return values, passing in a handle to arbitrary user supplied data, and
+more).
+* Options for making the file checking more lax, as information could
+be stored between the different key/value pairs making the file format
+semi-compatible between implementations. This could be information usually
+stored in the header, or information about the key/values themselves (such
+as type information). Some implementations, including this one, are
+more strict in what they accept.
+* Some of the functions in [main.c][] could be moved into [cdb.c][] so
+users do not have to reimplement them.
+* A poor performance [Bloom Filter][] like algorithm can be made 
+using the first level hash table. A function to return whether an
+item may be in the set or is definitely not can be made by checking
+whether there are any items in the first 256 bucket that key hashes
+to. The 256 bucket is small enough to fit in memory, as are the second
+level hash tables which could be used to improve performance even more.
+* If the user presorts the keys when adding the data then the keys can
+be retrieved in order using the "foreach" API call. The user could sort
+on the data instead if they like.
+* The way version information is communicated within the API is not
+perhaps the best way of doing it. A simple macro would suffice.
+* The file format really could use a redesign. One improvement apart
+from adding a header would be to move the 256 bucket initial hash table
+to the end of the file so the entire file format could be streamed to
+disk.
+
 # BUGS
 
 For any bugs, email the [author][]. It comes with a 'works on my machine
@@ -1200,7 +1253,8 @@ guarantee'. The code has been written with the intention of being portable,
 and should work on 32-bit and 64-bit machines. It is tested more frequently
 on a 64-bit Linux machine, and less frequently on Windows. Please give a
 detailed bug report (including but not limited to what machine/OS you are
-running on, compiler, compiler version, a failing example test case, etcetera).
+running on, compiler, compiler version, a failing example test case, your
+blood type and star sign, etcetera).
 
 # PYTHON IMPLEMENTATION
 
@@ -1354,31 +1408,6 @@ implementation. It only implements the original 32-bit version.
 The libraries, documentation, and the test driver program are licensed under
 the [Unlicense][]. Do what thou wilt.
 
-# TODO
-
-* Abandon this branch's goals, but merge changes.
-* Talk about changing the hash algorithm, and perhaps looking up similar
-keys (the two-layer hash algorithm might interfere with this, could be solved
-by setting 8-bits of the hash to zero...)
-* Add maybe match to API? Sort of like a bloom filter. It would just check
-  the existence of a potential match and not do the actual disk lookup.
-* You could store the keys sorted if you wanted and do a foreach. You just
-need to add them in a sorted order.
-* Make a generator/iterator instead of a "foreach" loop?
-* In [main.c][] the input is taken from stdin, this could be taken from
-a UDP packet.
-* Talk about improvements to file format; header, moving 256 hash table to
-end of file for streaming, sorting/greater control over database, etcetera.
-* Move version information into [cdb.c][].
-* Perhaps the file access callbacks should be their own structure, so they
-can be reused, much like the generic memory allocator.
-* Move many of the functions in "main.c" to another file, so they can be
-reused in other projects. It would be annoying for the consumer to have to
-do it themselves, or reimplement things.
-* Options for making the file checking more lax;
-  - Information can be stored between the different keys/value pairs?
-
-
 [author]: howe.r.j.89@gmail.com
 [main.c]: main.c
 [cdb.c]: cdb.c
@@ -1414,3 +1443,5 @@ do it themselves, or reimplement things.
 [stdio.h]: https://cplusplus.com/reference/cstdio/
 [fread]: https://cplusplus.com/reference/cstdio/fread/
 [ftell]: https://cplusplus.com/reference/cstdio/ftell/
+[SOUNDEX]: https://en.wikipedia.org/wiki/Soundex
+[Bloom Filter]: https://en.wikipedia.org/wiki/Bloom_filter

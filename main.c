@@ -82,7 +82,7 @@ static int cdb_getopt(cdb_getopt_t *opt, const int argc, char *const argv[], con
 	assert(opt);
 	assert(fmt);
 	assert(argv);
-	enum { BADARG_E = ':', BADCH_E = '?' };
+	enum { BADARG_E = ':', BADCH_E = '?', BADIO_E = '!', };
 
 	if (!(opt->init)) {
 		opt->place = ""; /* option letter processing */
@@ -111,7 +111,8 @@ static int cdb_getopt(cdb_getopt_t *opt, const int argc, char *const argv[], con
 		if (!*opt->place)
 			opt->index++;
 		if (opt->error && *fmt != ':')
-			(void)fprintf(stderr, "illegal option -- %c\n", opt->option);
+			if (fprintf(stderr, "illegal option -- %c\n", opt->option) < 0)
+				return BADIO_E;
 		return BADCH_E;
 	}
 
@@ -127,7 +128,8 @@ static int cdb_getopt(cdb_getopt_t *opt, const int argc, char *const argv[], con
 			if (*fmt == ':')
 				return BADARG_E;
 			if (opt->error)
-				(void)fprintf(stderr, "option requires an argument -- %c\n", opt->option);
+				if (fprintf(stderr, "option requires an argument -- %c\n", opt->option) < 0)
+					return BADIO_E;
 			return BADCH_E;
 		} else	{ /* white space */
 			opt->arg = argv[opt->index];
@@ -146,7 +148,7 @@ static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
 		return -1;
 	char buf[IO_BUFFER_SIZE];
 	const size_t length = fp->length;
-	for (size_t i = 0; i < length; i += sizeof buf) { /* NB. Double buffering! */
+	for (size_t i = 0; i < length; i += sizeof buf) { /* N.B. Double buffering! */
 		const size_t l = length - i;
 		assert(l <= sizeof buf);
 		if (cdb_read(cdb, buf, MIN(sizeof buf, l)) < 0)
@@ -366,7 +368,7 @@ static int cdb_stats(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t
 static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose, size_t bytes) {
 	assert(cdb);
 	assert(output);
-	unsigned long distances[DISTMAX] = { 0 };
+	unsigned long distances[DISTMAX] = { 0, };
 	unsigned long entries = 0, occupied = 0, collisions = 0, hmin = ULONG_MAX, hmax = 0;
 	double avg_key_length = 0, avg_value_length = 0, avg_hash_length = 0;
 	cdb_statistics_t s = {
@@ -383,7 +385,7 @@ static int cdb_stats_print(cdb_t *cdb, FILE *output, int verbose, size_t bytes) 
 			return -1;
 
 	for (size_t i = 0; i < 256; i++) {
-		if (cdb_seek(cdb, i * (2u * bytes)) < 0)
+		if (cdb_seek(cdb, i * (2ull * bytes)) < 0)
 			return -1;
 		cdb_word_t pos = 0, num = 0;
 		if (cdb_read_word_pair(cdb, &pos, &num) < 0)
@@ -474,6 +476,7 @@ static int cdb_query(cdb_t *cdb, char *key, int record, FILE *output) {
 	return 2; /* not found */
 }
 
+/* We should output directly to a database as well... */
 static int generate(FILE *output, unsigned long records, unsigned long min, unsigned long max, unsigned long seed) {
 	assert(output);
 	uint64_t s[2] = { seed, 0 };
@@ -507,7 +510,7 @@ static int generate(FILE *output, unsigned long records, unsigned long min, unsi
 static int hasher(FILE *input, FILE *output) { /* should really input keys in "+length:key\n" format */
 	assert(input);
 	assert(output);
-	char line[512] = { 0 }; /* long enough for everyone right? */
+	char line[512] = { 0, }; /* long enough for everyone right? */
 	for (; fgets(line, sizeof line, input); line[0] = 0) {
 		size_t l = strlen(line);
 		if (l && line[l-1] == '\n')
@@ -550,6 +553,7 @@ Options :\n\n\
 \t-T temp.cdb : name of temporary file to use\n\
 \t-V file.cdb : validate database\n\
 \t-q file.cdb key #? : run query for key with optional record number\n\
+\t-b size     : database size (valid sizes = 16, 32 (default), 64)\n\
 \t-o number   : specify offset into file where database begins\n\
 \t-H          : hash keys and output their hash\n\
 \t-g          : spit out an example database *dump* to standard out\n\
@@ -603,7 +607,7 @@ int main(int argc, char **argv) {
 		case 'q': file = opt.arg; mode = QUERY;    break;
 		case 'V': file = opt.arg; mode = VALIDATE; break;
 		case 'g': mode = GENERATE;                 break;
-		case 'T': tmp  = opt.arg;                  break;
+		case 'T': assert(opt.arg); tmp  = opt.arg; break;
 		case 'b': assert(opt.arg); ops.size   = atol(opt.arg); break;
 		case 'm': assert(opt.arg); min        = atol(opt.arg); break;
 		case 'M': assert(opt.arg); max        = atol(opt.arg); break;

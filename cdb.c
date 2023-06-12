@@ -80,17 +80,17 @@ typedef struct {
 } cdb_hash_table_t; /* secondary hash table structure */
 
 struct cdb { /* constant database handle: for all your querying needs! */
-	cdb_options_t ops;   /* custom file/flash operators */
+	cdb_options_t ops;     /* custom file/flash operators */
 	void	*file;         /* database handle */
 	cdb_word_t file_start, /* start position of structures in file */
 	       file_end,       /* end position of database in file, if known, zero otherwise */
 	       hash_start;     /* start of secondary hash tables near end of file, if known, zero otherwise */
 	cdb_word_t position;   /* read/write/seek position: be careful with this variable! */
 	int error;             /* error, if any, any error causes database to be invalid */
-	unsigned create  :1,   /* have we opened database up in create mode? */
-		 opened  :1,   /* have we successfully opened up the database? */
-		 empty   :1,   /* is the database empty? */
-		 sought  :1;   /* have we performed at least one seek (needed to position init cache) */
+	unsigned create : 1,   /* have we opened database up in create mode? */
+		 opened : 1,   /* have we successfully opened up the database? */
+		 empty  : 1,   /* is the database empty? */
+		 sought : 1;   /* have we performed at least one seek (needed to position init cache) */
 	cdb_hash_table_t table1[]; /* only allocated if in create mode, BUCKETS elements are allocated */
 };
 
@@ -298,7 +298,7 @@ int cdb_read_word_pair(cdb_t *cdb, cdb_word_t *w1, cdb_word_t *w2) {
 	/* we only need to set this to 'b' to a value to avoid static checkers
 	 * signalling a problem, 'b' should be written to be
 	 * 'cdb_read_internal' before it is used. */
-	uint8_t b[2ul * sizeof(cdb_word_t)] = { 0 };
+	uint8_t b[2ul * sizeof(cdb_word_t)] = { 0, };
 	const cdb_word_t r = cdb_read_internal(cdb, b, 2ul * l);
 	if (r != (cdb_word_t)(2l * l))
 		return -1;
