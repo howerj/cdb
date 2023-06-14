@@ -132,7 +132,8 @@ static inline uint64_t cdb_get_mask(cdb_t *cdb) {
 	return UINT64_MAX;
 }
 
-/* This is not 'djb2' hash - the character is xor'ed in and not added. */
+/* This is not 'djb2' hash - the character is xor'ed in and not added. This
+ * has sometimes been called 'DJB2a'. */
 static inline uint32_t cdb_djb_hash(const uint8_t *s, const size_t length) {
 	cdb_assert(s);
 	uint32_t h = 5381ul;
@@ -571,6 +572,8 @@ static int cdb_retrieve(cdb_t *cdb, const cdb_buffer_t *key, cdb_file_pos_t *val
 		(void)cdb_error(cdb, CDB_ERROR_MODE_E);
 		goto fail;
 	}
+	/* It is usually a good idea to include the length as part of the data
+	 * of the hash, however that would make the format incompatible. */
 	h = cdb->ops.hash((uint8_t *)(key->buffer), key->length) & cdb_get_mask(cdb); /* locate key in first table */
 	if (CDB_MEMORY_INDEX_ON) { /* use more memory (~4KiB) to speed up first match */
 		cdb_hash_table_t *t = &cdb->table1[h % CDB_BUCKETS];
