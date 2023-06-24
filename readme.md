@@ -1174,7 +1174,8 @@ Things that *should* and *could* be done, but have not:
 * Fuzzing with [American Fuzzy Lop][] to iron out the most egregious
 bugs, security relevant or otherwise. This has been used on the [pickle][]
 library to great effect and it finds bugs that would not be caught be unit
-testing alone.
+testing alone. **The library is currently undergoing fuzzing, nothing
+bad found so far**.
 * The current library implements a system for looking up data
 stored to disk, a *system* could be created that does so much more.
 Amongst the things that could be done are:

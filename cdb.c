@@ -311,7 +311,7 @@ int cdb_read_word_pair(cdb_t *cdb, cdb_word_t *w1, cdb_word_t *w2) {
 static int cdb_write_word_pair(cdb_t *cdb, const cdb_word_t w1, const cdb_word_t w2) {
 	cdb_assert(cdb);
 	const size_t l = cdb_get_size(cdb);
-	uint8_t b[2ul * sizeof(cdb_word_t)];
+	uint8_t b[2ul * sizeof(cdb_word_t)]; /* NOT INITIALIZED */
 	cdb_pack(b,     w1, l);
 	cdb_pack(b + l, w2, l);
 	if (cdb_write(cdb, b, 2ul * l) != (2ul * l))
@@ -370,7 +370,6 @@ static inline int cdb_finalize(cdb_t *cdb) { /* write hash tables to disk */
 			continue;
 		if (cdb_bound_check(cdb, length < t->header.length) < 0)
 			goto fail;
-
 		if (mlen < length) {
 			const cdb_word_t required = length * sizeof (cdb_word_t);
 			if (cdb_overflow_check(cdb, required < length) < 0)

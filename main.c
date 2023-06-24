@@ -77,7 +77,8 @@ static void die(const char *fmt, ...) {
 
 /* Adapted from: <https://stackoverflow.com/questions/10404448>, this
  * could be extended to parse out numeric values, and do other things, but
- * that is not needed here. */
+ * that is not needed here. The function and structure should be turned
+ * into a header only library. */
 static int cdb_getopt(cdb_getopt_t *opt, const int argc, char *const argv[], const char *fmt) {
 	assert(opt);
 	assert(fmt);
@@ -150,6 +151,8 @@ static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
 	const size_t length = fp->length;
 	for (size_t i = 0; i < length; i += sizeof buf) { /* N.B. Double buffering! */
 		const size_t l = length - i;
+		if (l > sizeof buf)
+			return -1;
 		assert(l <= sizeof buf);
 		if (cdb_read(cdb, buf, MIN(sizeof buf, l)) < 0)
 			return -1;
@@ -193,7 +196,7 @@ static int cdb_dump(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t 
 	assert(value);
 	assert(param);
 	FILE *output = param;
-	char kstr[64+1], vstr[64+2];
+	char kstr[64+1], vstr[64+2]; /* NOT INITIALIZED */
 	kstr[0] = '+';
 	const unsigned kl = cdb_number_to_string(kstr + 1, key->length, 10) + 1;
 	vstr[0] = ',';
@@ -220,7 +223,7 @@ static int cdb_dump_keys(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_p
 	assert(param);
 	UNUSED(value);
 	FILE *output = param;
-	char kstr[64+2];
+	char kstr[64+2]; /* NOT INITIALIZED */
 	kstr[0] = '+';
 	const unsigned kl = cdb_number_to_string(kstr + 1, key->length, 10) + 1;
 	kstr[kl]     = ':';
@@ -253,7 +256,7 @@ static int cdb_string_to_number(const char *s, cdb_word_t *out) {
 
 static int scan(FILE *input, cdb_word_t *out, int delim) {
 	assert(input);
-	char b[64];
+	char b[64]; /* NOT INITIALIZED */
 	size_t i = 0;
 	int ch = 0;
 	for (i = 0; i < sizeof (b) && (EOF != (ch = fgetc(input))) && isdigit(ch); i++)
@@ -283,7 +286,7 @@ static int cdb_create(cdb_t *cdb, FILE *input) {
 
 	for (;;) {
 		cdb_word_t klen = 0, vlen = 0;
-		char sep[2] = { 0 };
+		char sep[2] = { 0, };
 		const int first = fgetc(input);
 		if (first == EOF) /* || first == '\n' {need to handle '\r' as well} */
 			goto end;
@@ -467,7 +470,7 @@ static int cdb_query(cdb_t *cdb, char *key, int record, FILE *output) {
 	assert(key);
 	assert(output);
 	const cdb_buffer_t kb = { .length = strlen(key), .buffer = key };
-	cdb_file_pos_t vp = { 0, 0 };
+	cdb_file_pos_t vp = { 0, 0, };
 	const int gr = cdb_lookup(cdb, &kb, &vp, record);
 	if (gr < 0)
 		return -1;
@@ -479,7 +482,7 @@ static int cdb_query(cdb_t *cdb, char *key, int record, FILE *output) {
 /* We should output directly to a database as well... */
 static int generate(FILE *output, unsigned long records, unsigned long min, unsigned long max, unsigned long seed) {
 	assert(output);
-	uint64_t s[2] = { seed, 0 };
+	uint64_t s[2] = { seed, 0, };
 	if (max == 0)
 		max = 1024;
 	if (min > max)
@@ -585,7 +588,7 @@ int main(int argc, char **argv) {
 	binary(stdout);
 	binary(stderr);
 
-	char ibuf[BUFSIZ], obuf[BUFSIZ];
+	char ibuf[BUFSIZ], obuf[BUFSIZ]; /* NOT INITIALIZED */
 	if (setvbuf(stdin, ibuf, _IOFBF, sizeof ibuf) < 0)
 		return -1;
 	if (setvbuf(stdout, obuf, _IOFBF, sizeof obuf) < 0)
