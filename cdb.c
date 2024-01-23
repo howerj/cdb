@@ -100,7 +100,7 @@ struct cdb { /* constant database handle: for all your querying needs! */
  * mark it as being used. */
 
 int cdb_version(unsigned long *version) {
-	CDB_BUILD_BUG_ON(sizeof(cdb_word_t) != 2 &&sizeof(cdb_word_t) != 4 && sizeof(cdb_word_t) != 8);
+	CDB_BUILD_BUG_ON(sizeof(cdb_word_t) != 2 && sizeof(cdb_word_t) != 4 && sizeof(cdb_word_t) != 8);
 	cdb_assert(version);
 	unsigned long spec = ((sizeof (cdb_word_t)) * CHAR_BIT) >> 4; /* Lowest three bits = size */
 	spec |= CDB_TESTS_ON        << 4;

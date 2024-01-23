@@ -33,6 +33,9 @@ database, one for hashing input keys and printing the hash for the default hash
 function and another one for generating a database with (Pseudo-)random keys
 and values of a given length.
 
+**This library can create 16, 32 and 64 bit versions of the CDB file format
+removing one of the major limitations of the 32-bit version.**
+
 # OPTIONS
 
 **-h** : print out this help message and exit successfully
@@ -126,6 +129,15 @@ some of the overhead is taken up as part of the file format). Any other
 arbitrary limitation is a bug in the implementation.
 
 The minimum size of a CDB file is 256 \* 2 \* (N/8) bytes.
+
+It should be noted that if you build a N bit (where N is 16, 32 or 64) 
+version of this library you are limited to creating databases that are the
+size of N and less, e.g. If `cdb_word_t` is set to `uint32_t`, and therefore
+the 32-bit version of this library is being built, then you can create 32-bit
+and 16-bit versions of the CDB database format, but you cannot make 64-bit
+versions. You can set `cdb_word_t` to `uint64_t` (which enables the library
+to create all three mutually incompatible versions of the library) on a
+32-bit system, naturally.
 
 # INPUT/DUMP FORMAT
 
