@@ -44,7 +44,7 @@ static int cdb_seek_cb(void *file, uint64_t offset) {
 	return fseek(((file_t*)file)->handle, offset, SEEK_SET);
 }
 
-static void *cdb_open_cb(const char *name, int mode) {
+static void *cdb_open_cb(cdb_options_t *ops, const char *name, int mode) {
 	assert(name);
 	assert(mode == CDB_RO_MODE || mode == CDB_RW_MODE);
 	const char *mode_string = mode == CDB_RW_MODE ? "wb+" : "rb";
@@ -67,7 +67,8 @@ static void *cdb_open_cb(const char *name, int mode) {
 	return fb;
 }
 
-static int cdb_close_cb(void *file) {
+static int cdb_close_cb(cdb_options_t *ops, void *file) {
+	UNUSED(ops);
 	assert(file);
 	assert(((file_t*)file)->handle);
 	const int r = fclose(((file_t*)file)->handle);

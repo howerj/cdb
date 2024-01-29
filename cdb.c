@@ -194,7 +194,7 @@ static inline int cdb_overflow_check(cdb_t *cdb, const int fail) {
 	return cdb_error(cdb, fail ? CDB_ERROR_OVERFLOW_E : CDB_OK_E);
 }
 
-static inline int cdb_free(cdb_t *cdb, void *p) {
+int cdb_free(cdb_t *cdb, void *p) {
 	cdb_assert(cdb);
 	if (!p)
 		return 0;
@@ -202,7 +202,7 @@ static inline int cdb_free(cdb_t *cdb, void *p) {
 	return 0;
 }
 
-static inline void *cdb_allocate(cdb_t *cdb, const size_t length) {
+void *cdb_allocate(cdb_t *cdb, const size_t length) {
 	cdb_preconditions(cdb);
 	void *r = cdb->ops.allocator(cdb->ops.arena, NULL, 0, length);
 	if (length != 0 && r == NULL)
@@ -210,7 +210,7 @@ static inline void *cdb_allocate(cdb_t *cdb, const size_t length) {
 	return r ? memset(r, 0, length) : NULL;
 }
 
-static inline void *cdb_reallocate(cdb_t *cdb, void *pointer, const size_t length) {
+void *cdb_reallocate(cdb_t *cdb, void *pointer, const size_t length) {
 	cdb_preconditions(cdb);
 	void *r = cdb->ops.allocator(cdb->ops.arena, pointer, 0, length);
 	if (length != 0 && r == NULL)
@@ -334,7 +334,7 @@ static int cdb_free_resources(cdb_t *cdb) {
 	if (!cdb)
 		return 0;
 	if (cdb->file)
-		cdb->ops.close(cdb->file);
+		cdb->ops.close(cdb, cdb->file);
 	cdb->file = NULL;
 	cdb->opened = 0;
 	int r = 0;
@@ -473,7 +473,7 @@ int cdb_open(cdb_t **cdb, const cdb_options_t *ops, const int create, const char
 	c->empty       = 1;
 	*cdb           = c;
 	c->file_start  = CDB_FILE_START;
-	c->file        = c->ops.open(file, create ? CDB_RW_MODE : CDB_RO_MODE);
+	c->file        = c->ops.open(c, file, create ? CDB_RW_MODE : CDB_RO_MODE);
 	if (!(c->file)) {
 		(void)cdb_error(c, CDB_ERROR_OPEN_E);
 		goto fail;
@@ -671,6 +671,71 @@ int cdb_count(cdb_t *cdb, const cdb_buffer_t *key, uint64_t *count) {
 	return r;
 }
 
+void *cdb_get_handle(cdb_t *cdb) {
+	cdb_assert(cdb);
+	return cdb->file;	
+}
+
+cdb_options_t *cdb_get_options(cdb_t *cdb) {
+	cdb_assert(cdb);
+	return &cdb->ops;
+}
+
+int cdb_iterate(cdb_t *cdb, cdb_iterator_t *it) {
+	cdb_assert(cdb);
+	cdb_assert(it);
+	int r = 0;
+	cdb_word_t pos = 0;
+	if (cdb->error || cdb->create)
+		goto fail;
+
+	pos = it->value.position + it->value.length; /* Should be zero on initialization */
+	pos = pos ? pos : cdb->file_start + (256ul * (2ul * cdb_get_size(cdb)));
+
+	if (cdb_bound_check(cdb, pos > cdb->hash_start) < 0)
+		goto fail;
+
+	if (pos < cdb->hash_start) {
+		if (cdb_seek_internal(cdb, pos) < 0)
+			goto fail;
+		cdb_word_t klen = 0, vlen = 0;
+		if (cdb_read_word_pair(cdb, &klen, &vlen) < 0)
+			goto fail;
+		// TODO: Bounds check
+		it->key   = (cdb_file_pos_t){ .length = klen, .position = pos + (2ul * cdb_get_size(cdb)), };
+		it->value = (cdb_file_pos_t){ .length = vlen, .position = pos + (2ul * cdb_get_size(cdb)) + klen, };
+		r = 1;
+	}
+	return cdb_failure(cdb) < 0 ? CDB_ERROR_E : r;
+fail:
+	return cdb_error(cdb, CDB_ERROR_E);
+
+}
+
+#if 1
+int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
+	cdb_assert(cdb);
+	cdb_assert(cdb->opened);
+	if (cdb->error || cdb->create)
+		goto fail;
+
+	int r = 0;
+	cdb_iterator_t it = { .key = { .position = 0, }, };
+	for (; (r = cdb_iterate(cdb, &it) > 0); ) {
+		const int v = cb ? cb(cdb, &it.key, &it.value, param) : 0;
+		if (v < 0)
+			goto fail;
+		if (v > 0) /* early termination */
+			break;
+	}
+	if (r < 0)
+		goto fail;
+
+	return cdb_failure(cdb) < 0 ? CDB_ERROR_E : r;
+fail:
+	return cdb_error(cdb, CDB_ERROR_E);
+}
+#else
 int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
 	cdb_assert(cdb);
 	cdb_assert(cdb->opened);
@@ -701,6 +766,7 @@ int cdb_foreach(cdb_t *cdb, cdb_callback cb, void *param) {
 fail:
 	return cdb_error(cdb, CDB_ERROR_E);
 }
+#endif
 
 static int cdb_round_up_to_next_power_of_two(const cdb_word_t x) {
 	cdb_word_t p = 1ul;

@@ -38,6 +38,8 @@ typedef struct {
 	unsigned long hash_start;
 } cdb_statistics_t;
 
+// TODO: Import `hexy_getopt_t` for better argument parsing
+// TODO: Add to library?
 typedef struct {
 	char *arg;   /* parsed argument */
 	int error,   /* turn error reporting on/off */
@@ -581,7 +583,7 @@ int main(int argc, char **argv) {
 	enum { QUERY, DUMP, CREATE, STATS, KEYS, VALIDATE, GENERATE, };
 	const char *file = NULL;
 	char *tmp = NULL;
-	int mode = VALIDATE, creating = 0;
+	int mode = VALIDATE, creating = 0, memory_only = 0;
 	unsigned long min = 0ul, max = 1024ul, records = 1024ul, seed = 0ul;
 
 	binary(stdin);
