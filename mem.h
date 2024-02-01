@@ -4,15 +4,15 @@
 #include "cdb.h"
 
 typedef struct {
+	const cdb_callbacks_t *uniq_ptr;
 	cdb_t *cdb;
-	const cdb_options_t *uniq_ptr;
 	int mode;
 	size_t length, pos;
 	char *m;
 } cdb_mem_t;
 
-cdb_mem_t *cdb_mem(cdb_t *cdb);
+int cdb_mem(cdb_t *cdb, cdb_mem_t **mem);
 
-extern const cdb_options_t cdb_mem_options;
+extern const cdb_callbacks_t cdb_mem_options;
 
 #endif

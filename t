@@ -15,15 +15,15 @@ performance () {
 	time -p ./cdb -s   "${PERFORMANCE}" > /dev/null;
 	time -p cdb   -s   "${PERFORMANCE}" > /dev/null;
 	time -p cdbstats < "${PERFORMANCE}" > /dev/null;
-
+	
 	time -p ./cdb   -d "${PERFORMANCE}" > /dev/null;
 	time -p cdb     -d "${PERFORMANCE}" > /dev/null;
 	time -p cdbdump  < "${PERFORMANCE}" > /dev/null;
-
+	
 	./cdb   -d "${PERFORMANCE}" > 1.txt;
 	cdb     -d "${PERFORMANCE}" > 2.txt;
 	cdbdump  < "${PERFORMANCE}" > 3.txt;
-
+	
 	time -p ./cdb -c 1.cdb          < 1.txt;
 	time -p cdb   -c 2.cdb          < 2.txt;
 	time -p cdbmake  3.cdb temp.cdb < 3.txt;

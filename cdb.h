@@ -16,7 +16,7 @@ extern "C" {
 #include <stdint.h>
 
 #ifndef CDB_API
-#define CDB_API /* Used to apply attributes to exported functions */
+#define CDB_API /* Used to apply attributes to exported functions (prototypes only) */
 #endif
 
 #ifndef CDB_WORD_T
@@ -28,11 +28,13 @@ typedef struct cdb cdb_t;
 
 enum { CDB_RO_MODE, CDB_RW_MODE, }; /* passed to "open" in the "mode" option */
 
-struct cdb_options;
-typedef struct cdb_options cdb_options_t;
+struct cdb_callbacks;
+typedef struct cdb_callbacks cdb_callbacks_t;
 
-struct cdb_options { /* a file abstraction layer, could point to memory, flash, or disk */
-	void *(*allocator)(void *arena, void *ptr, size_t oldsz, size_t newsz);
+typedef void *(*cdb_allocator_fn)(void *arena, void *ptr, size_t oldsz, size_t newsz);
+
+struct cdb_callbacks { /* a file abstraction layer and a few other things, could point to memory, flash, or disk */
+	cdb_allocator_fn allocator; /* used to allocate memory for the CDB database */
 	cdb_word_t (*hash)(const uint8_t *data, size_t length); /* hash function: NULL defaults to djb hash */
 	int (*compare)(const void *a, const void *b, size_t length); /* key comparison function: NULL defaults to memcmp */
 	cdb_word_t (*read)(void *file, void *buf, size_t length); /* always needed, read from a resource */
@@ -55,7 +57,7 @@ typedef struct {
 typedef struct {
 	cdb_word_t position; /* position in file, for use with cdb_read/cdb_seek */
 	cdb_word_t length;   /* length of data on disk, for use with cdb_read */
-} cdb_file_pos_t; /* used to represent a value on disk that can be accessed via 'cdb_options_t' */
+} cdb_file_pos_t; /* used to represent a value on disk that can be accessed via 'cdb_callbacks_t' */
 
 typedef struct {
 	cdb_file_pos_t key,   /* key length position; do not modify unless zeroing */
@@ -65,7 +67,7 @@ typedef struct {
 typedef int (*cdb_callback)(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param);
 
 /* All functions return: < 0 on failure, 0 on success/not found, 1 on found if applicable */
-CDB_API int cdb_open(cdb_t **cdb, const cdb_options_t *ops, int create, const char *file); /* arena may be NULL, allocator must be present */
+CDB_API int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, int create, const char *file); /* arena may be NULL, allocator must be present */
 CDB_API int cdb_close(cdb_t *cdb);  /* free cdb, close handles (and write to disk if in create mode) */
 CDB_API int cdb_read(cdb_t *cdb, void *buf, cdb_word_t length); /* Returns error code not length! Not being able to read "length" bytes is an error! */
 CDB_API int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value); /* do not call cdb_read and/or cdb_seek in open mode */
@@ -78,7 +80,7 @@ CDB_API int cdb_count(cdb_t *cdb, const cdb_buffer_t *key, uint64_t *count);
 CDB_API int cdb_status(cdb_t *cdb); /* returns CDB error status */
 CDB_API int cdb_version(unsigned long *version); /* version number in x.y.z format, z = LSB, MSB is library info */
 CDB_API int cdb_iterate(cdb_t *cdb, cdb_iterator_t *it);
-CDB_API int cdb_tests(const cdb_options_t *ops, const char *test_file);
+CDB_API int cdb_tests(const cdb_callbacks_t *ops, const char *test_file);
 
 CDB_API uint64_t cdb_prng(uint64_t s[2]); /* "s" is PRNG state, you can set it to any value you like to seed */
 CDB_API cdb_word_t cdb_hash(const uint8_t *data, size_t length); /* hash used by original CDB program */
@@ -86,7 +88,7 @@ CDB_API void *cdb_reallocate(cdb_t *cdb, void *pointer, const size_t length);
 CDB_API int cdb_free(cdb_t *cdb, void *p);
 CDB_API void *cdb_allocate(cdb_t *cdb, const size_t length);
 CDB_API void *cdb_get_handle(cdb_t *cdb);
-CDB_API cdb_options_t *cdb_get_options(cdb_t *cdb);
+CDB_API cdb_callbacks_t *cdb_get_options(cdb_t *cdb);
 
 #ifdef __cplusplus
 }

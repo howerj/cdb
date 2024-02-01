@@ -31,11 +31,15 @@ static void *cdb_allocator_cb(void *arena, void *ptr, const size_t oldsz, const 
 	return ptr;
 }
 
-cdb_mem_t *cdb_mem(cdb_t *cdb) {
+int cdb_mem(cdb_t *cdb, cdb_mem_t **mem) {
 	assert(cdb);
-	void *m = cdb_get_handle(cdb);
+	*mem = NULL;
+	cdb_mem_t *m = cdb_get_handle(cdb);
+	if (m->uniq_ptr != &cdb_mem_options)
+		return -1;
 	mem_asserts(m);
-	return m;
+	*mem = m;
+	return 0;
 }
 
 static int grow(cdb_t *cdb, cdb_mem_t *m) {
@@ -124,7 +128,7 @@ static int cdb_flush_cb(void *file) {
 	return 0;
 }
 
-const cdb_options_t cdb_mem_options = {
+const cdb_callbacks_t cdb_mem_options = {
 	.allocator = cdb_allocator_cb,
 	.hash      = NULL,
 	.compare   = NULL,

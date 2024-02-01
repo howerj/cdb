@@ -8,6 +8,7 @@
 #define UNUSED(X) ((void)(X))
 
 typedef struct {
+	const cdb_callbacks_t *uniq_ptr;
 	FILE *handle;
 	size_t length;
 	char buffer[];
@@ -44,8 +45,9 @@ static int cdb_seek_cb(void *file, uint64_t offset) {
 	return fseek(((file_t*)file)->handle, offset, SEEK_SET);
 }
 
-static void *cdb_open_cb(cdb_options_t *ops, const char *name, int mode) {
+static void *cdb_open_cb(cdb_t *cdb, const char *name, int mode) {
 	assert(name);
+	UNUSED(cdb);
 	assert(mode == CDB_RO_MODE || mode == CDB_RW_MODE);
 	const char *mode_string = mode == CDB_RW_MODE ? "wb+" : "rb";
 	FILE *f = fopen(name, mode_string);
@@ -57,8 +59,9 @@ static void *cdb_open_cb(cdb_options_t *ops, const char *name, int mode) {
 		fclose(f);
 		return NULL;
 	}
-	fb->handle = f;
-	fb->length = length;
+	fb->uniq_ptr = &cdb_host_options;
+	fb->handle   = f;
+	fb->length   = length;
 	if (setvbuf(f, fb->buffer, _IOFBF, fb->length) < 0) {
 		fclose(f);
 		free(fb);
@@ -67,8 +70,8 @@ static void *cdb_open_cb(cdb_options_t *ops, const char *name, int mode) {
 	return fb;
 }
 
-static int cdb_close_cb(cdb_options_t *ops, void *file) {
-	UNUSED(ops);
+static int cdb_close_cb(cdb_t *cdb, void *file) {
+	UNUSED(cdb);
 	assert(file);
 	assert(((file_t*)file)->handle);
 	const int r = fclose(((file_t*)file)->handle);
@@ -82,7 +85,7 @@ static int cdb_flush_cb(void *file) {
 	return fflush(((file_t*)file)->handle);
 }
 
-const cdb_options_t cdb_host_options = {
+const cdb_callbacks_t cdb_host_options = {
 	.allocator = cdb_allocator_cb,
 	.hash      = NULL,
 	.compare   = NULL,

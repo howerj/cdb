@@ -596,7 +596,7 @@ int main(int argc, char **argv) {
 	if (setvbuf(stdout, obuf, _IOFBF, sizeof obuf) < 0)
 		return -1;
 
-	cdb_options_t ops = cdb_host_options;
+	cdb_callbacks_t ops = cdb_host_options;
 
 	cdb_getopt_t opt = { .init = 0 };
 	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hHgvt:c:d:k:s:q:V:b:T:m:M:R:S:o:G:")) != -1; ) {

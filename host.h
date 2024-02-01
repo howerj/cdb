@@ -3,6 +3,6 @@
 
 #include "cdb.h"
 
-extern const cdb_options_t cdb_host_options;
+extern const cdb_callbacks_t cdb_host_options;
 
 #endif

@@ -301,7 +301,7 @@ byte in the key in a custom hash).
 Note that there is nothing stopping you storing the key-value pairs in
 some kind of order, you could do this by adding the keys in lexicographic
 order for a database sorted by key. Retrieving keys using the C function
-"cdb\_foreach" would allow you retrieve keys in order. The hash table itself
+`cdb_foreach` would allow you retrieve keys in order. The hash table itself
 would remain unaware of this order. Dumping the key-value pairs would maintain
 this order as well. There is no guarantee other tools will preserve this
 order however (they may dump key-value pairs backwards, or by going through
@@ -333,7 +333,7 @@ a database requires opening up a new database in create mode:
 
 	/* error handling omitted for brevity */
 	cdb_t *cdb = NULL;
-	cdb_options_t ops = { /* Your file callbacks/options go here */ };
+	cdb_callbacks_t ops = { /* Your file callbacks/options go here */ };
 	cdb_open(&cdb, &ops, 1, "example.cdb");
 	cdb_buffer_t key   = { .length = 5, .buffer = "hello", };
 	cdb_buffer_t value = { .length = 5, .buffer = "world", };
@@ -361,7 +361,7 @@ read mode (create = 0):
 
 	/* error handling omitted for brevity */
 	cdb_t *cdb = NULL;
-	cdb_options_t ops = { /* Your file callbacks/options go here */ };
+	cdb_callbacks_t ops = { /* Your file callbacks/options go here */ };
 	cdb_open(&cdb, &ops, 1, "example.cdb");
 	cdb_buffer_t key = { .length = 5, .buffer = "hello" };
 	cdb_file_pos_t value = { 0, 0, };
@@ -372,27 +372,27 @@ read mode (create = 0):
 Upon retrieval of a key the database does not allocate a value for you, instead
 it provides an object consisting of a file position and a length of the value.
 This can be read from wherever the database is stored with the function
-'cdb\_read'. Before issuing a read, 'cdb\_seek' *must* be called as the file
+`cdb_read`. Before issuing a read, `cdb_seek` *must* be called as the file
 handle may be pointing to a different area in the database.
 
 If a read or a seek is issued that goes outside of the bounds of the database
 then all subsequent database operations on that handle will fail, not just
 reads or seeks. The only valid things to do on a database that has returned a
-negative number is to call 'cdb\_status' and then 'cdb\_close' and never
-use the handle again. 'cdb\_status' must not be used on a closed handle.
+negative number is to call `cdb_status` and then `cdb_close` and never
+use the handle again. `cdb_status` must not be used on a closed handle.
 
-As there are potentially duplicate keys, the function 'cdb\_count' can be
+As there are potentially duplicate keys, the function `cdb_count` can be
 used to query for duplicates. It sets the parameter count to the number of
 records found for that key (and it sets count to zero, and returns zero, if no
 keys are found, it returns one if one or more keys were found).
 
-The function 'cdb\_status' can be used to query what error has occurred, if
+The function `cdb_status` can be used to query what error has occurred, if
 any. On an error a negative value is returned, the meaning of this value is
 deliberately not included in the header as the errors recorded and the
 meaning of their values may change. Use the source for the library to determine
 what error occurred.
 
-The function 'cdb\_version' returns the version number in an out parameter
+The function `cdb_version` returns the version number in an out parameter
 and information about the compile time options selected when the library was built.
 A [Semantic Version Number][] is used, which takes the form "MAJOR.MINOR.PATCH".
 The PATCH number is stored in the Least Significant Byte, the MINOR number the
@@ -413,12 +413,12 @@ not more than is necessary.
 
 There is regularity in these functions, they all return negative
 on failure (the only exception being the allocator callback that
-returns a pointer), most of the functions accept a "cdb\_t" structure
+returns a pointer), most of the functions accept a `cdb_t` structure
 as well, which is an [opaque pointer][] (opaque pointers are not
 an unalloyed good, they imply that an allocator must be used, which
 can be a problem in embedded systems).
 
-	int cdb_open(cdb_t **cdb, const cdb_options_t *ops, int create, const char *file);
+	int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, int create, const char *file);
 	int cdb_close(cdb_t *cdb);
 	int cdb_read(cdb_t *cdb, void *buf, cdb_word_t length);
 	int cdb_add(cdb_t *cdb, const cdb_buffer_t *key, const cdb_buffer_t *value);
@@ -430,20 +430,21 @@ can be a problem in embedded systems).
 	int cdb_count(cdb_t *cdb, const cdb_buffer_t *key, long *count);
 	int cdb_status(cdb_t *cdb);
 	int cdb_version(unsigned long *version);
-	int cdb_tests(const cdb_options_t *ops, const char *test_file);
+	int cdb_tests(const cdb_callbacks_t *ops, const char *test_file);
+	int cdb_iterate(cdb_t *cdb, cdb_iterator_t *it);
 
 	typedef int (*cdb_callback)(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t *value, void *param);
 
-* cdb\_open
+* `cdb_open`
 
-The most complex function that contains the most parameters, "cdb\_open"
+The most complex function that contains the most parameters, `cdb_open`
 is used to open a connection to a database. A pointer to a handle is
 passed to the first parameter, using the supplied allocation callback
 (passed-in in the "ops" parameter) the function will allocate enough space
-for "cdb\_t" structure, this out-parameter is the database handle. It will
+for `cdb_t` structure, this out-parameter is the database handle. It will
 be set to NULL on failure, which will also be indicated with a negative
-return value on the "cdb\_open" function. Once "cdb\_close" is called on
-this handle the handle *should not* be used again, and "cdb\_close" should
+return value on the `cdb_open` function. Once `cdb_close` is called on
+this handle the handle *should not* be used again, and `cdb_close` should
 only be called on the returned handle *once*.
 
 A single database can be opened by as many readers as you like, however
@@ -458,24 +459,24 @@ cause corruption of data and general nasty things! Do not do it!
 As such, a database can only be opened up in read only, or write only
 mode.
 
-The "file" parameter is passed to the "open" callback, which is present
-in the "ops" parameter.
+The `file` parameter is passed to the `open` callback, which is present
+in the `ops` parameter.
 
-		void *(*open)(const char *name, int mode);
+		void *(*open)(cdb_t *cdb, const char *name, int mode);
 
 The callback should return an opaque pointer on success and NULL on failure.
 It is used to open up a handle to the database via whatever method the
 library user would like (for example, a simple file present in your file
 system, or a section of flash in an embedded computer). The open callback
-is used by "cdb\_open" and should not be called directly.
+is used by `cdb_open` and should not be called directly.
 
-The "mode" parameter to the "open" callback will be set to "CDB\_RW\_MODE" if
-"create" is non-zero, and will be set to "CDB\_RO\_MODE" if it is zero.
+The `mode` parameter to the `open` callback will be set to `CDB_RW_MODE` if
+`create` is non-zero, and will be set to `CDB_RO_MODE` if it is zero.
 
-CDB\_RW\_MODE is an enumeration that has the value "1", whilst
-CDB\_RW\_MODE has the value "0".
+`CDB_RW_MODE` is an enumeration that has the value "1", whilst
+`CDB_RW_MODE` has the value "0".
 
-"cdb\_open" does quite a lot, when opening a CDB file for reading the
+`cdb_open` does quite a lot, when opening a CDB file for reading the
 file is *partially* verified, when opening for writing a blank first level
 hash table is written to disk. If either of this fails, then opening
 the database will fail.
@@ -484,30 +485,30 @@ The function also needs the callbacks to perform a seek to be present,
 along with the callback for reading. The write callback only needs to
 present when the database is opened up in write mode.
 
-* cdb\_close
+* `cdb_close`
 
 This closes the CDB database handle, the handle may be NULL, if so,
 nothing will be done. The same handle should not be passed in twice
-to "cdb\_close" as this can cause double-free errors. This function
-will release any memory and handles (by calling the "close" callback)
+to `cdb_close` as this can cause double-free errors. This function
+will release any memory and handles (by calling the `close` callback)
 associated with the handle.
 
 When writing a database this function has one more task to do, and
 that is finalizing the database, it writes out the hash-table at
-the end of the file. If "cbd\_close" is not called after the
+the end of the file. If `cbd_close` is not called after the
 last entry has been added then the database will be in an invalid
 state and will not work.
 
 This function may return negative on error, for example if the
 finalization fails.
 
-After calling "cdb\_close" the handle *must not* be used again.
+After calling `cdb_close` the handle *must not* be used again.
 
-* cdb\_read
+* `cdb_read`
 
 To be used on a database opened up in read-mode only. This can
 be used to read values, and sometimes keys, from the database. This
-function does not call "cdb\_seek", the caller must call "cdb\_seek"
+function does not call `cdb_seek`, the caller must call `cdb_seek`
 before calling this function to move the file pointer to the
 desired location before reading. The file pointer will be updated
 to point to after the location that has been read (or more accurately,
@@ -516,14 +517,14 @@ number of bytes read, instead it returns zero for no error and
 negative if an error condition occurs (a partial read is treated as
 an error).
 
-* cdb\_add
+* `cdb_add`
 
 To be used on a database opened up in write, or creation, mode only.
 
 This function adds a key-value pair to the database, which can be
-looked up only after finalizing the database (by calling "cdb\_close")
+looked up only after finalizing the database (by calling `cdb_close`)
 and reopening the database in read-only mode, which should be done
-after the final "cdb\_add" has been added.
+after the final `cdb_add` has been added.
 
 It is unfortunate that both the key and value must reside within
 memory, but doing anything else would complicate the API too much.
@@ -543,8 +544,7 @@ added. This is one improvement that could be added to the library (as
 you cannot check or query a partially written database at the
 moment).
 
-
-* cdb\_seek
+* `cdb_seek`
 
 This function changes the position that the next read or write
 will occur from. You should not seek before or after the database,
@@ -553,18 +553,18 @@ start of the file, the optional offset specified in the CDB options
 structure being added to the current position. Relative to current
 position or file-end seeks cannot be done.
 
-This function must be called before each call to "cdb\_read" or
-"cdb\_read\_word\_pair", otherwise you may read garbage.
+This function must be called before each call to `cdb_read` or
+`cdb_read_word_pair`, otherwise you may read garbage.
 
-Calling "cdb\_seek" multiple times on the same location has no
-effect (the "fseek" C standard library function may discard buffers
+Calling `cdb_seek` multiple times on the same location has no
+effect (the `fseek` C standard library function may discard buffers
 if called multiple times on the same location even though the file
 position has not changed).
 
-* cdb\_foreach
+* `cdb_foreach`
 
-The "cdb\_foreach" function calls a callback for each value within
-the CDB database. The callback is passed an optional "param". If
+The `cdb_foreach` function calls a callback for each value within
+the CDB database. The callback is passed an optional `param`. If
 the callback returns negative or a non-zero number then the for-each
 loop is terminated early (a positive number is returned, a negative
 number results in -1 being returned). If the callback returns zero
@@ -576,31 +576,31 @@ within the CDB database that contains the key and value. The keys
 and values are not presented in any specific order and the order
 should not be expected to stay the same between calls.
 
-To read either a key or a value you must call "cdb\_seek" before
-calling "cdb\_read" yourself.
+To read either a key or a value you must call `cdb_seek` before
+calling `cdb_read` yourself.
 
 Passing in NULL is allowed and is not a No-Operation, it can be
 used to effectively check the integrity of the database.
 
-* cdb\_read\_word\_pair
+* `cdb_read_word_pair`
 
 To be used on a database opened up in read-mode only. This function
 is a helper function that strictly does not need to exist, it is
-used for reading two "cdb\_word\_t" values from the database. This
+used for reading two `cdb_word_t` values from the database. This
 can be useful for the library user for more detailed analysis of
 the database than would normally be possible, many values within
-the database are stored as two "cdb\_word\_t" values. Looking inside this
+the database are stored as two `cdb_word_t` values. Looking inside this
 read-only database is not discouraged and the file format is well
 documented.
 
-This function does not call "cdb\_seek", that must be called
+This function does not call `cdb_seek`, that must be called
 before hand to seek to the desired file location. The file position
 will be updated to point after the two read values.
 
-* cdb\_get
+* `cdb_get`
 
-This function populates the "value" structure if the "key" is found
-within the CDB database. The members of "value" will be set to zero
+This function populates the `value` structure if the `key` is found
+within the CDB database. The members of `value` will be set to zero
 if a key is not found, if it is found the position will be non-zero,
 although the length may be zero.
 
@@ -623,18 +623,18 @@ It is better to give the user tools to do what they need than insisting
 it be done one, limiting, although "easy", way.
 
 This does mean that to actually retrieve the value the user must
-perform their own "cdb\_seek" and "cdb\_read" operations. This
+perform their own `cdb_seek` and `cdb_read` operations. This
 means that the entire value does not need to read into memory
 be the consumer, and potentially be processed block by block by
-the "read" callback if needed.
+the `read` callback if needed.
 
-* cdb\_lookup
+* `cdb_lookup`
 
-"cdb\_lookup" is similar to "cdb\_get" except it accepts an
+`cdb_lookup` is similar to `cdb_get` except it accepts an
 optional record number. Everything that applies to the get-function
 applies to the lookup-function, the only difference is the record
-number argument (internally "cdb\_get" is implemented with
-"cdb\_lookup").
+number argument (internally `cdb_get` is implemented with
+`cdb_lookup`).
 
 If there are two or more keys that are identical then the question
 of how to select a specific key arises. This is done with an
@@ -644,13 +644,13 @@ first value being zero and the index being incremented from there
 on out.
 
 If the key is found but the index is out of bounds it is treated
-as if the key does not exist. Use "cdb\_count" to calculate the
+as if the key does not exist. Use `cdb_count` to calculate the
 maximum number records per key if needed, it is far more expensive
-to repeatedly call "cdb\_lookup" on a key until it returns "key
+to repeatedly call `cdb_lookup` on a key until it returns "key
 not found" to determine the number of duplicate keys than it is
-to call "cdb\_count".
+to call `cdb_count`.
 
-The index argument perhaps should be a "cdb\_word\_t", but there
+The index argument perhaps should be a `cdb_word_t`, but there
 is always debate around these topics (personally if I were to
 design a C-like programming language everything integers would default
 to 64-bits and all pointers would fit within that, other types
@@ -658,9 +658,9 @@ for indexing and the like would also be 64-bit, that's not a
 criticism of C, the madness around integer types was born out
 of necessity).
 
-* cdb\_count
+* `cdb_count`
 
-The "cdb\_count" function counts the number of entries that
+The `cdb_count` function counts the number of entries that
 have the same key value. This function requires potentially multiple
 seeks and reads to compute, so the returned value should be cached if
 you plan on using it again as the value is expensive to calculate.
@@ -669,22 +669,22 @@ If the key is not found, a value indicating that will be returned
 and the count argument will be zeroed. If found, the count will
 be put in the count argument.
 
-* cdb\_status
+* `cdb_status`
 
 This function returns the status of the CDB library handle. All
 errors are sticky in this library, if an error occurs when handling
 a CDB database then there is no way to clear that error short of
 reopening the database with a new handle. The only valid operation
 to do after getting an error from any of the functions that operate
-on a "cdb\_t" handle is to call "cdb\_status" to query the error
+on a `cdb_t` handle is to call `cdb_status` to query the error
 value that is stored internally.
 
-"cdb\_status" should return a zero on no error and a negative value
+`cdb_status` should return a zero on no error and a negative value
 on failure. It should not return a positive non-zero value.
 
-* cdb\_version
+* `cdb_version`
 
-"cdb\_version" returns the version number of the library. It stores
+`cdb_version` returns the version number of the library. It stores
 the value in an unsigned long. This may return an error value and a
 zero value if the version has not been set correctly at compile time.
 
@@ -694,43 +694,58 @@ the "MAJOR" number has changed then there are potentially breaking
 changes in the API or ABI of this library that have been introduced,
 no matter how trivial.
 
-* cdb\_tests
+* `cdb_tests`
 
-And the callback for "cdb\_foreach":
+And the callback for `cdb_foreach`:
 
-* "cdb\_callback"
+* `cdb_callback`
 
 This callback is called for each value within the CDB database
-when used with "cdb\_foreach". If a negative value is returned from
+when used with `cdb_foreach`. If a negative value is returned from
 this callback then the foreach loop will end early and an error value
 will be returned. If the value returned is greater than zero then
 the foreach loop will terminate potentially early. If zero the
 foreach loop will continue to the next key-value pair if available.
 
-Each time this callback is called by "cdb\_foreach" it will be
+Each time this callback is called by `cdb_foreach` it will be
 passed in a key-value pair in the form of two length/file-location
 structures. You will need to seek to those locations and call
 read the key-values yourself. There is no guarantee the file position
 is in the correct location (ie. Pointing to the location of the
-key), so call "cdb\_seek" before calling "cdb\_read".
+key), so call `cdb_seek` before calling `cdb_read`.
 
 There is no guarantee that the key-value pairs will be presented
 in the same order each time the function is called and should not
 be counted on. There is no attempt to preserve order.
 
-See "cdb\_foreach" for more information.
+See `cdb_foreach` for more information.
+
+* `cdb_iterate`
+
+This function can be used to iterate through the entire database,
+much like `cdb_foreach`, but instead of applying a callback to
+each value it returns a set of key/value lengths and positions.
+
+The callback returns negative on failure, one if there are more
+key/values to iterate through and zero if there are not.
+
+The user must call seek prior to using any of the return values
+with `cdb_read`.
+
+Internally `cdb_foreach` is built using this iterator mechanism.
 
 ## C API STRUCTURES
 
-The C API has two simple structures and one complex one, the latter being
+The C API has three simple structures and one complex one, the latter being
 more of a container for callbacks (or, some might say, a way of doing
-object oriented programming in C). The complex structure, "cdb\_options\_t",
+object oriented programming in C). The complex structure, `cdb_callbacks_t`,
 is an unfortunate necessity.
 
-The other two structures, "cdb\_buffer\_t" and "cdb\_file\_pos\_t", are
-simple enough and need very little explanation, although they will be.
+The other three structures, `cdb_buffer_t`, `cdb_file_pos_t` and
+`cdb_iterator_t`, are simple enough and need very little explanation, although 
+they will be explained.
 
-Let us look at the "cdb\_options\_t" structure:
+Let us look at the `cdb_callbacks_t` structure:
 
 	typedef struct {
 		void *(*allocator)(void *arena, void *ptr, size_t oldsz, size_t newsz);
@@ -739,14 +754,14 @@ Let us look at the "cdb\_options\_t" structure:
 		cdb_word_t (*read)(void *file, void *buf, size_t length);
 		cdb_word_t (*write)(void *file, void *buf, size_t length);
 		int (*seek)(void *file, uint64_t offset);
-		void *(*open)(const char *name, int mode);
-		int (*close)(void *file);
+		void *(*open)(cdb_t *cdb, const char *name, int mode);
+		int (*close)(cdb_t *cdb, void *file);
 		int (*flush)(void *file);
 
 		void *arena;
 		cdb_word_t offset;
 		unsigned size;
-	} cdb_options_t;
+	} cdb_callbacks_t;
 
 Each member of the structure will need an explanation.
 
@@ -785,7 +800,7 @@ used to prevent unnecessary allocations.
 The new size of the desired pointer, this should be non-zero
 if reallocating or allocating memory. To free memory set this
 to zero, along with providing a pointer to free. If this is zero
-and the "ptr" is NULL then nothing will happen.
+and the `ptr` is NULL then nothing will happen.
 
 5. The return value
 
@@ -821,7 +836,7 @@ worth repeating!).
 
 * hash (optional)
 
-The "hash" callback can be set to NULL, if that is the case then
+The `hash` callback can be set to NULL, if that is the case then
 the default hash, based off of djb2 and present in the original
 CDB library, will be used. If you do provide your own hash function
 you will effectively make this database incompatible with the standard
@@ -829,7 +844,7 @@ CDB format but there are valid reasons for you do do this, you might
 need a stronger hash that is more resistant to denial of service attacks,
 or perhaps you want similar keys to *collide* more to group them together.
 
-The hash function returns "cdb\_word\_t" so the number of bits this
+The hash function returns `cdb_word_t` so the number of bits this
 function returns is dependent on big that type is (determined at
 compile time).
 
@@ -855,14 +870,14 @@ data is stored. Unlike [fread][] a status code is returned instead of
 the length of the data read, negative indicating failure. A partial read
 should result in a failure. The only thing lacking from this callback
 is a way to signal to perform non-blocking Input and Output, that would
-complicate the internals however. The "read" callback should always be
+complicate the internals however. The `read` callback should always be
 present.
 
-The first parameter, "file", is a handle to an object returned by the
-"open" callback.
+The first parameter, `file`, is a handle to an object returned by the
+`open` callback.
 
-The callback should return 0 indicating no error if "length" bytes have
-been read into "buf".
+The callback should return 0 indicating no error if `length` bytes have
+been read into `buf`.
 
 Reading should continue from the previous file pointer position, that
 is if you open a file handle, read X bytes, the next time you read Y
@@ -874,7 +889,7 @@ also implement that behavior.
 
 * write (conditionally optional, needed for database creation only)
 
-Similar to the "read" callback, but instead writes data into wherever
+Similar to the `read` callback, but instead writes data into wherever
 the database is stored.
 
 * seek
@@ -884,15 +899,15 @@ occur from.
 
 * open
 
-This callback should open the resource specified by the "name" string
+This callback should open the resource specified by the `name` string
 (which will usually be a file name). There are two modes a read/write
 mode (used to create the database) and a read-only mode. This callback
-much like the "close" callback will only be called once internally
+much like the `close` callback will only be called once internally
 by the CDB library.
 
 * close
 
-This callback should close the file handle returned by "open", freeing
+This callback should close the file handle returned by `open`, freeing
 any resources associated with that handle.
 
 * flush (optional)
@@ -904,9 +919,9 @@ then the function will not be called.
 
 * arena (optional, can be NULL, depends on your allocator)
 
-This value is passed into the allocator as the "arena" argument whenever
+This value is passed into the allocator as the `arena` argument whenever
 the allocator is called. It can be NULL, which will usually be the case
-if you are just using "malloc", "realloc" and "free" to implement the
+if you are just using `malloc`, `realloc` and `free` to implement the
 allocator, but if you are implementing your own arena based allocator you
 might want to set it to point to your arena (hence the name).
 
@@ -920,13 +935,21 @@ of bytes in the file.
 * size
 
 The size variable, which can be left at zero, is used to select
-the word size of the database, this has an interaction with "cdb\_word\_t".
+the word size of the database, this has an interaction with `cdb_word_t`.
 
 Missing perhaps is a unsigned field that could contain options
 in each bit position in that field.
 
-
 ## BUFFER STRUCTURE
+
+This structure is used to represent a key or value in memory, this
+puts a limit on those function that accept `cdb_buffer_t` in that
+the those keys and values must be able to fit into memory. This
+affects database create more than it does reading a database (the
+key must fit into memory when looking a specific, but the value is 
+returned as a file position). On a memory constrained system you
+can iterate through the key/value pairs instead (which uses
+`cdb_file_pos_t` structures instead).
 
 	typedef struct {
 		cdb_word_t length; /* length of data */
@@ -935,10 +958,33 @@ in each bit position in that field.
 
 ## FILE POSITION STRUCTURE
 
+This structure is used to return keys or values as a position on
+disk, the data is not loaded into memory, as such it is possible to
+access data returned via this method that will not fit in main memory.
+
+This does mean a user of the library has to do slightly more work than
+a library that retrieves data and allocates a buffer for it automatically
+(although it is possible to build functions that do this upon these
+ones).
+
 	typedef struct {
 		cdb_word_t position; /* position in file, for use with cdb_read/cdb_seek */
 		cdb_word_t length;   /* length of data on disk, for use with cdb_read */
-	} cdb_file_pos_t; /* used to represent a value on disk that can be accessed via 'cdb_options_t' */
+	} cdb_file_pos_t; /* used to represent a value on disk that can be accessed via 'cdb_callbacks_t' */
+
+## ITERATOR STRUCTURE
+
+This structure is used to iterate through the entire database, the
+iterator structure should be *entirely* initialized to zero when
+starting the iteration loop. `cdb_seek` should be used to position
+before reading. You should not modify either the position or length
+of either the `key` or `value` fields unless you are setting them
+*all* to zero (which will start the iteration loop from the beginning).
+
+	typedef struct {
+		cdb_file_pos_t key,   /* key length position; do not modify unless zeroing */
+			       value; /* key length position; do not modify unless zeroing */
+	} cdb_iterator_t; /* used to iterate through the database one item at a time, initialize all values to zero to start iterator */
 
 ## EMBEDDED SUITABILITY
 
@@ -946,7 +992,7 @@ There are many libraries written in C, for better or worse, as it is the
 lingua franca for software development at the moment. Few of those libraries
 are directly suitable for use in [Embedded systems][] and are much less
 flexible than they could be in general. Embedded systems pose some interesting
-constraints (eschewing allocation via "malloc", lack of a file-system, and
+constraints (eschewing allocation via `malloc`, lack of a file-system, and
 more). By designing the library for an embedded system we can make a library
 more useful not only for those systems but for hosted systems as well (eg. By
 providing callbacks for the FILE functions we can redirect them to wherever
@@ -1011,8 +1057,8 @@ And the code like this, in C like pseudo-code:
 	#endif
 
 
-In order to call this code you need to be aware of the "LIBRARY\_UNIT\_TESTS"
-macro each time the function "library\_unit\_tests" is called, and worse,
+In order to call this code you need to be aware of the `LIBRARY_UNIT_TESTS`
+macro each time the function `library_unit_tests` is called, and worse,
 whether or not your library was compiled with that macro enabled resulting
 in link-time errors. Another common mistake is not passing in the functions
 for I/O and allocation to the unit test framework, making it unsuitable for
@@ -1023,7 +1069,7 @@ Compare this to this libraries way of handling unit tests:
 
 In the header:
 
-	int cdb_tests(const cdb_options_t *ops, const char *test_file);
+	int cdb_tests(const cdb_callbacks_t *ops, const char *test_file);
 
 And the *relevant* bits of code/pseudo-code:
 
@@ -1034,7 +1080,7 @@ And the *relevant* bits of code/pseudo-code:
 	}
 
 
-	int cdb_tests(const cdb_options_t *ops, const char *test_file) {
+	int cdb_tests(const cdb_callbacks_t *ops, const char *test_file) {
 		assert(ops);
 		assert(test_file);
 		BUILD_BUG_ON(sizeof (cdb_word_t) < 2);
@@ -1048,39 +1094,39 @@ And the *relevant* bits of code/pseudo-code:
 		return STATUS;
 	}
 
-There is no "ifdef" surrounding any of the code (using "ifdef" anywhere to
+There is no `ifdef` surrounding any of the code (using `ifdef` anywhere to
 conditionally execute code is usually a mistake, is only used within the
 project to set default macro values if the macro is not previously
 defined, an acceptable usage).
 
 Two things are important here, the first, all of the Input and Output
-and memory related functions are passed in via the "ops" structure,
+and memory related functions are passed in via the `ops` structure,
 as mentioned. This means that the test code is easy to port and run on
 a microcontroller which might not have a file system (for testing and
 development purposes you might want to run the tests on a microcontroller
 but not keep them in in the final product).
 
-The main difference is the lack of "ifdef" guards, instead if the macro
-"CDB\_TESTS\_ON" is false the function "cdb\_tests" returns "CDB\_OK\_E"
+The main difference is the lack of `ifdef` guards, instead if the macro
+`CDB_TESTS_ON` is false the function `cdb_tests` returns `CDB_OK_E`
 (there is some debate if the return code should be this, or something
 to indicate the tests are not present, but that is a separate issue, the
 important bit is the return depending on whether the tests are present).
 
-This "if" statement is a *far superior* way of handling optional code in
+This `if` statement is a *far superior* way of handling optional code in
 general. The caller does not have to worry if the function is present or
 not, as the function will always be present in the library. Not only that,
-but if the tests are not run because the compile time macro "CDB\_TESTS\_ON"
+but if the tests are not run because the compile time macro `CDB_TESTS_ON`
 is false then the compiler will optimize out those tests even on the lowest
 optimization settings (on any decent compiler).
 
 This also has the advantage that the code that is not run still goes
 through the compilation step meaning the code is less likely to be wrong
-when refactoring code. Not only that, but because "xorshift128" which
-"cdb\_tests" depends on, is declared to be static, if "CDB\_TESTS\_ON" is
+when refactoring code. Not only that, but because `xorshift128` which
+`cdb_tests` depends on, is declared to be static, if `CDB_TESTS_ON` is
 false it to will be eliminated from the compiled object file so long as no
 other function calls it. In actual fact, the code has changed since
-this has been written and "cdb\_prng" is exposed in the header as it is
-useful in [main.c][], which is equivalent to "xorshift128".
+this has been written and `cdb_prng` is exposed in the header as it is
+useful in [main.c][], which is equivalent to `xorshift128`.
 
 # BUILD REQUIREMENTS
 
@@ -1096,15 +1142,15 @@ First clone the repository and change directory to the newly clone repository:
 	git clone https://github.com/howerj/cdb cdb
 	cd cdb
 
-Type 'make' to build the *cdb* executable and library.
+Type `make` to build the *cdb* executable and library.
 
-Type 'make test' to build and run the *cdb* internal tests. The script called
-'t', written in [sh][], does more testing, and tests that the user interface
-is working correctly. 'make dist' is used to create a compressed tar file for
-distribution. 'make install' can be used to install the binaries, however the
-default installation directory (which can be set with the 'DESTDIR' makefile
-variable) installs to a directory called 'install' within the repository -
-it will not actually install anything. Changing 'DESTDIR' to '/usr' should
+Type `make test` to build and run the *cdb* internal tests. The script called
+`t`, written in [sh][], does more testing, and tests that the user interface
+is working correctly. `make dist` is used to create a compressed tar file for
+distribution. `make install` can be used to install the binaries, however the
+default installation directory (which can be set with the `DESTDIR` makefile
+variable) installs to a directory called `install` within the repository -
+it will not actually install anything. Changing `DESTDIR` to `/usr` should
 install everything properly. [pandoc][] is required to build the manual page
 for installation, which is generated from this [markdown][] file.
 
@@ -1230,7 +1276,7 @@ performance. It is not really viable to do this with this system, but
 hashing algorithms that maximize collisions, such as [SOUNDEX][], are
 interesting and deserve a mention. This could be paired with a user
 supplied comparison function for comparing the keys themselves.
-* The callbacks for the file access words ("open", "read", ...) deserve
+* The callbacks for the file access words (`open`, `read`, ...) deserve
 their own structure so it can be reused, as the allocator can, although
 it may require some changes to how those functions work (such as different
 return values, passing in a handle to arbitrary user supplied data, and
@@ -1258,6 +1304,10 @@ perhaps the best way of doing it. A simple macro would suffice.
 from adding a header would be to move the 256 bucket initial hash table
 to the end of the file so the entire file format could be streamed to
 disk.
+* Both keys and data could be deduplicated, if a data field is the
+same as another, given the database is meant to be read only, the
+data fields could point to the same value. This is currently not 
+allowed due to pointer checking.
 
 # BUGS
 
