@@ -37,16 +37,6 @@
 #define CDB_READ_BUFFER_LENGTH      (256ul)
 #endif
 
-#ifndef cdb_assert
-#define cdb_assert(X) (assert((X)))
-#endif
-
-#define cdb_implies(P, Q)           cdb_assert(!(P) || (Q))
-#define cdb_mutual(P, Q)            do { cdb_implies(P, Q); cdb_implies(Q, P); } while (0)
-#define cdb_never                   cdb_assert(0)
-
-#define CDB_BUILD_BUG_ON(condition) ((void)sizeof(char[1 - 2*!!(condition)]))
-#define CDB_MIN(X, Y)               ((X) < (Y) ? (X) : (Y))
 #define CDB_NBUCKETS                (8ul)
 #define CDB_BUCKETS                 (1ul << CDB_NBUCKETS)
 #define CDB_FILE_START              (0ul)

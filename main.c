@@ -6,6 +6,8 @@
 
 #include "cdb.h"
 #include "host.h"
+#include "mem.h"
+#include "extra.h"
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
@@ -38,18 +40,6 @@ typedef struct {
 	unsigned long hash_start;
 } cdb_statistics_t;
 
-// TODO: Import `hexy_getopt_t` for better argument parsing
-// TODO: Add to library?
-typedef struct {
-	char *arg;   /* parsed argument */
-	int error,   /* turn error reporting on/off */
-	    index,   /* index into argument list */
-	    option,  /* parsed option */
-	    reset;   /* set to reset */
-	char *place; /* internal use: scanner position */
-	int  init;   /* internal use: initialized or not */
-} cdb_getopt_t;      /* getopt clone; with a few modifications */
-
 static unsigned verbose = 0;
 
 static void info(const char *fmt, ...) {
@@ -77,72 +67,6 @@ static void die(const char *fmt, ...) {
 	exit(EXIT_FAILURE);
 }
 
-/* Adapted from: <https://stackoverflow.com/questions/10404448>, this
- * could be extended to parse out numeric values, and do other things, but
- * that is not needed here. The function and structure should be turned
- * into a header only library. */
-static int cdb_getopt(cdb_getopt_t *opt, const int argc, char *const argv[], const char *fmt) {
-	assert(opt);
-	assert(fmt);
-	assert(argv);
-	enum { BADARG_E = ':', BADCH_E = '?', BADIO_E = '!', };
-
-	if (!(opt->init)) {
-		opt->place = ""; /* option letter processing */
-		opt->init  = 1;
-		opt->index = 1;
-	}
-
-	if (opt->reset || !*opt->place) { /* update scanning pointer */
-		opt->reset = 0;
-		if (opt->index >= argc || *(opt->place = argv[opt->index]) != '-') {
-			opt->place = "";
-			return -1;
-		}
-		if (opt->place[1] && *++opt->place == '-') { /* found "--" */
-			opt->index++;
-			opt->place = "";
-			return -1;
-		}
-	}
-
-	const char *oli = NULL; /* option letter list index */
-	if ((opt->option = *opt->place++) == ':' || !(oli = strchr(fmt, opt->option))) { /* option letter okay? */
-		 /* if the user didn't specify '-' as an option, assume it means -1.  */
-		if (opt->option == '-')
-			return -1;
-		if (!*opt->place)
-			opt->index++;
-		if (opt->error && *fmt != ':')
-			if (fprintf(stderr, "illegal option -- %c\n", opt->option) < 0)
-				return BADIO_E;
-		return BADCH_E;
-	}
-
-	if (*++oli != ':') { /* don't need argument */
-		opt->arg = NULL;
-		if (!*opt->place)
-			opt->index++;
-	} else {  /* need an argument */
-		if (*opt->place) { /* no white space */
-			opt->arg = opt->place;
-		} else if (argc <= ++opt->index) { /* no arg */
-			opt->place = "";
-			if (*fmt == ':')
-				return BADARG_E;
-			if (opt->error)
-				if (fprintf(stderr, "option requires an argument -- %c\n", opt->option) < 0)
-					return BADIO_E;
-			return BADCH_E;
-		} else	{ /* white space */
-			opt->arg = argv[opt->index];
-		}
-		opt->place = "";
-		opt->index++;
-	}
-	return opt->option; /* dump back option letter */
-}
-
 static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
 	assert(cdb);
 	assert(fp);
@@ -162,16 +86,6 @@ static int cdb_print(cdb_t *cdb, const cdb_file_pos_t *fp, FILE *output) {
 			return -1;
 	}
 	return 0;
-}
-
-static inline void cdb_reverse_char_array(char * const r, const size_t length) {
-	assert(r);
-	const size_t last = length - 1;
-	for (size_t i = 0; i < length / 2ul; i++) {
-		const char t = r[i];
-		r[i] = r[last - i];
-		r[last - i] = t;
-	}
 }
 
 static unsigned cdb_number_to_string(char b[65 /* max int size in base 2, + NUL*/], cdb_word_t u, int base) {
@@ -598,8 +512,8 @@ int main(int argc, char **argv) {
 
 	cdb_callbacks_t ops = cdb_host_options;
 
-	cdb_getopt_t opt = { .init = 0 };
-	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hHgvt:c:d:k:s:q:V:b:T:m:M:R:S:o:G:")) != -1; ) {
+	cdb_getopt_t opt = { .init = 0, .error = stderr, };
+	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hHgvt:c:d:k:s:q:V:b#T:m#M#R#S#o#G:")) != -1; ) {
 		switch (ch) {
 		case 'h': return help(stdout, argv[0]), 0;
 		case 'H': return hasher(stdin, stdout);
@@ -612,13 +526,13 @@ int main(int argc, char **argv) {
 		case 'q': file = opt.arg; mode = QUERY;    break;
 		case 'V': file = opt.arg; mode = VALIDATE; break;
 		case 'g': mode = GENERATE;                 break;
-		case 'T': assert(opt.arg); tmp  = opt.arg; break;
-		case 'b': assert(opt.arg); ops.size   = atol(opt.arg); break;
-		case 'm': assert(opt.arg); min        = atol(opt.arg); break;
-		case 'M': assert(opt.arg); max        = atol(opt.arg); break;
-		case 'R': assert(opt.arg); records    = atol(opt.arg); break;
-		case 'S': assert(opt.arg); seed       = atol(opt.arg); break;
-		case 'o': assert(opt.arg); ops.offset = atol(opt.arg); break;
+		case 'T': assert(opt.arg); tmp = opt.arg;  break;
+		case 'b': ops.size   = opt.narg; break;
+		case 'm': min        = opt.narg; break;
+		case 'M': max        = opt.narg; break;
+		case 'R': records    = opt.narg; break;
+		case 'S': seed       = opt.narg; break;
+		case 'o': ops.offset = opt.narg; break;
 		default: help(stderr, argv[0]); return 1;
 		}
 	}

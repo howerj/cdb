@@ -25,9 +25,9 @@ host.o: host.c host.h cdb.h makefile
 
 mem.o: mem.c mem.h cdb.h makefile
 
-main.o: main.c host.o mem.o cdb.h makefile
+main.o: main.c host.o mem.o cdb.h extra.h mem.h host.h makefile
 
-extra.o: extra.c cdb.h makefile
+extra.o: extra.c extra.h cdb.h makefile
 
 lib${TARGET}.a: ${TARGET}.o ${TARGET}.h
 	${AR} ${ARFLAGS} $@ $<
@@ -36,7 +36,7 @@ lib${TARGET}.a: ${TARGET}.o ${TARGET}.h
 lib${TARGET}.${DLL}: ${TARGET}.o ${TARGET}.h
 	${CC} ${CFLAGS} -shared ${TARGET}.o -o $@
 
-${TARGET}: main.o host.o lib${TARGET}.a
+${TARGET}: main.o host.o extra.o mem.o lib${TARGET}.a
 	${CC} $^ -o $@
 	-strip ${TARGET}
 

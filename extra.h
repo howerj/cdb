@@ -6,14 +6,16 @@
 #include <stdio.h>
 
 typedef struct {
-	cdb_buffer_t key, value;
-} cdb_hash_entry_t;
+	cdb_buffer_t key, 
+		     value;
+} cdb_hash_entry_t; /* should possibly be split up for performance reasons */
 
 typedef struct {
-	cdb_allocator_fn alloc;
-	void *arena;
-	cdb_hash_entry_t *items;
-	size_t used, length;
+	cdb_allocator_fn alloc;  /* Allocator for this hash table; set during initialization */
+	void *arena;             /* Arena passed to allocator; set during initialization */
+	cdb_hash_entry_t *items; /* List of hash table items, may be NULL depending on `length`, never access directly */
+	size_t used,             /* Number of items in use in hash table */
+	       length;           /* Length of `items` field in records */
 } cdb_hash_t;
 
 typedef struct {
@@ -61,8 +63,8 @@ int cdb_add_bool(cdb_t *cdb, char *key, bool on);
 int cdb_add_hash(cdb_t *cdb, cdb_hash_t *hash);
 
 int cdb_are_keys_unique(cdb_t *cdb);
-int cdb_is_sorted(cdb_t *cdb, int onkeys);
-int cdb_is_sorted_fn(cdb_t *cdb, int onkeys, int (*cmp)(void *param, const cdb_file_pos_t *prev, const cdb_file_pos_t *cur), void *param);
+int cdb_is_sorted(cdb_t *cdb, bool onkeys, bool ignorecase, int direction);
+int cdb_is_sorted_fn(cdb_t *cdb, int onkeys, int (*cmp)(cdb_t *cdb, void *param, const cdb_file_pos_t *prev, const cdb_file_pos_t *cur), void *param);
 
 int cdb_lookup_allocate(cdb_t *cdb, const cdb_buffer_t *key, uint8_t **value, size_t *length, uint64_t record, int reuse);
 int cdb_flag(const char *v);
@@ -76,8 +78,9 @@ int cdb_base64_encode(const unsigned char *ibuf, size_t ilen, unsigned char *obu
 
 void cdb_reverse_char_array(char * const r, const size_t length);
 
-cdb_hash_t *cdb_hash_create(cdb_allocator_fn alloc, void *param);
+int cdb_hash_create(cdb_allocator_fn alloc, void *arena, cdb_hash_t **hash);
 int cdb_hash_destroy(cdb_hash_t *h);
+int cdb_hash_exists(cdb_hash_t *h, const cdb_buffer_t *key);
 int cdb_hash_get(cdb_hash_t *h, const cdb_buffer_t *key, cdb_buffer_t **value);
 int cdb_hash_set(cdb_hash_t *h, const cdb_buffer_t *key, const cdb_buffer_t *value);
 int cdb_hash_are_keys_unique(cdb_hash_t *h);
@@ -85,13 +88,34 @@ int cdb_hash_delete(cdb_hash_t *h, const cdb_buffer_t *key);
 int cdb_hash_foreach(cdb_hash_t *h, int (*cb)(void *param, const cdb_buffer_t *key, const cdb_buffer_t *value), void *param);
 int cdb_hash_count(cdb_hash_t *h, size_t *count);
 
+int cdb_hash_set_buffer(cdb_hash_t *h, const char *key, cdb_buffer_t *value);
+int cdb_hash_get_buffer(cdb_hash_t *h, const char *key, cdb_buffer_t *value);
+
+int cdb_hash_set_long(cdb_hash_t *h, const char *key, long value);
+int cdb_hash_get_long(cdb_hash_t *h, const char *key, long *value);
+int cdb_hash_set_string(cdb_hash_t *h, const char *key, const char *string);
+int cdb_hash_get_string(cdb_hash_t *h, const char *key, char **string);
+int cdb_hash_set_bool(cdb_hash_t *h, const char *key, bool value);
+int cdb_hash_get_bool(cdb_hash_t *h, const char *key, bool *value);
+
+int cdb_isalnum(int ch);
+int cdb_isalpha(int ch);
+int cdb_isascii(int ch);
+int cdb_isblank(int ch);
+int cdb_iscntrl(int ch);
+int cdb_isdigit(int ch);
 int cdb_isgraph(int ch);
 int cdb_islower(int ch);
+int cdb_isprint(int ch);
+int cdb_ispunct(int ch);
+int cdb_isspace(int ch);
 int cdb_isupper(int ch);
-int cdb_isdigit(int ch);
 int cdb_isxdigit(int ch);
-int cdb_toupper(int ch);
 int cdb_tolower(int ch);
+int cdb_toupper(int ch);
 
+int cdb_istrcmp(const char *a, const char *b); /* ASCII only */
+
+int cdb_extra_tests(const cdb_callbacks_t *ops, const char *testfile);
 
 #endif
