@@ -1,3 +1,7 @@
+/* Author: Richard James Howe
+ * License: Public Domain / The Unlicense
+ * Email: howe.r.j.89@gmail.com
+ * Repo: https://github.com/howerj/cdb */
 #ifndef CDB_EXTRA_H
 #define CDB_EXTRA_H
 
@@ -6,6 +10,25 @@
 #include <stdio.h>
 
 typedef struct {
+	/* We could add an unsigned integer field, used to store bits,
+	 * with fields for:
+	 * - Indicating ownership of the key-buffer, and value-buffer
+	 *   (e.g. Whether it can be free()'d or not).
+	 * - Whether the key is a duplicate.
+	 * Amongst other things.
+	 *
+	 * We *could* do this, or potentially set flags in `cdb_hash_t`
+	 * to disable duplicate keys and to indicate ownership of the
+	 * buffer contents.
+	 *
+	 * Adding another field here would make the hash much bigger
+	 * and potentially slower to traverse. 
+	 *
+	 * There are some small value optimizations that could be done
+	 * as well (for example storing strings in pointers if the length
+	 * field is less or equal to the pointer size) that also affect
+	 * ownership of the string. Who owns what turns about to be a
+	 * big question! */
 	cdb_buffer_t key, 
 		     value;
 } cdb_hash_entry_t; /* should possibly be split up for performance reasons */
@@ -14,9 +37,12 @@ typedef struct {
 	cdb_allocator_fn alloc;  /* Allocator for this hash table; set during initialization */
 	void *arena;             /* Arena passed to allocator; set during initialization */
 	cdb_hash_entry_t *items; /* List of hash table items, may be NULL depending on `length`, never access directly */
-	size_t used,             /* Number of items in use in hash table */
+	size_t used,             /* Number of `items` in use in hash table */
 	       length;           /* Length of `items` field in records */
-} cdb_hash_t;
+	unsigned error: 1,       /* A fatal error has occurred */
+		 alloc_key: 1,
+		 alloc_val: 1;
+} cdb_hash_t; /* Hash table data structure */
 
 typedef struct {
 	char *arg;   /* parsed argument */
@@ -90,7 +116,6 @@ int cdb_hash_count(cdb_hash_t *h, size_t *count);
 
 int cdb_hash_set_buffer(cdb_hash_t *h, const char *key, cdb_buffer_t *value);
 int cdb_hash_get_buffer(cdb_hash_t *h, const char *key, cdb_buffer_t *value);
-
 int cdb_hash_set_long(cdb_hash_t *h, const char *key, long value);
 int cdb_hash_get_long(cdb_hash_t *h, const char *key, long *value);
 int cdb_hash_set_string(cdb_hash_t *h, const char *key, const char *string);

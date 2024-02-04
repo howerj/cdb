@@ -13,6 +13,7 @@
 // TODO: Add lock functions, or note about them in readme.md, to callbacks
 // (needed for creation only, really).
 // TODO: Incremental copying hash table to new one...
+// TODO: Add `host.c`, `mem.c` and headers to makefile install target
 #include <assert.h>
 #include <string.h>
 #include <errno.h>
@@ -52,8 +53,7 @@ void cdb_reverse_char_array(char * const r, const size_t length) {
  * funarg problems and just banning references to variables in the
  * containing scope, would be useful for these small functions. 
  *
- * Also see <https://github.com/howerj/localely>
- */
+ * Also see <https://github.com/howerj/localely> */
 int cdb_isalnum(const int ch) { return cdb_isalpha(ch) || cdb_isdigit(ch); }
 int cdb_isalpha(const int ch) { return cdb_islower(ch) || cdb_isupper(ch); }
 int cdb_isascii(const int ch) { return ch < 128 && ch >= 0; }
@@ -605,6 +605,8 @@ int cdb_hash_create(cdb_allocator_fn alloc, void *arena, cdb_hash_t **hash) {
 		return -1;
 	h->alloc = alloc;
 	h->arena = arena;
+	h->alloc_key = 1;
+	h->alloc_val = 1;
 	*hash = h;
 	/* do not allocate any `h->items` just yet */
 	return 0;
@@ -644,6 +646,8 @@ static int cdb_hash_lookup(cdb_hash_t *h, const cdb_buffer_t *key, cdb_hash_entr
 	cdb_assert(key);
 	cdb_assert(key->buffer);
 	cdb_assert(element);
+	if (h->error)
+		return -1;
 
 	const uint64_t orecord = record ? *record : 0;
 	cdb_hash_entry_t *items = h->items;
@@ -653,6 +657,7 @@ static int cdb_hash_lookup(cdb_hash_t *h, const cdb_buffer_t *key, cdb_hash_entr
 		*record = 0;
 	if (!items)
 		return 0;
+	// TODO `cdb_hash` should have a key...
 	cdb_word_t index = cdb_hash((uint8_t*)key->buffer, key->length) % h->length;
 	uint64_t recnt = 0;
 	for (size_t i = 0; i < h->length; i++) {
@@ -682,6 +687,8 @@ static int cdb_hash_lookup(cdb_hash_t *h, const cdb_buffer_t *key, cdb_hash_entr
 int cdb_hash_exists(cdb_hash_t *h, const cdb_buffer_t *key) {
 	cdb_assert(h);
 	cdb_assert(key);
+	if (h->error)
+		return -1;
 	return 0;
 }
 
@@ -703,6 +710,9 @@ int cdb_hash_set(cdb_hash_t *h, const cdb_buffer_t *key, const cdb_buffer_t *val
 	cdb_assert(h);
 	cdb_assert(key);
 	cdb_assert(value);
+	if (h->error)
+		return -1;
+
 	if (h->length == 0 || (h->used >= (h->length / 2))) {
 	}
 	cdb_hash_entry_t *items = h->items;
@@ -716,6 +726,7 @@ int cdb_hash_set(cdb_hash_t *h, const cdb_buffer_t *key, const cdb_buffer_t *val
 			tomb = e;
 			continue;
 		}
+		// TODO: Copy buffer or replace buffer / key?
 		//if (unique) { } else { }
 		//if (ekey->length != key->length)
 		//	continue;
@@ -803,12 +814,14 @@ static int cdb_hash_entry_free_contents(cdb_hash_t *h, cdb_hash_entry_t *e) {
 	cdb_assert(h);
 	cdb_assert(e);
 	int r = 0;
-	if (e->key.buffer != cdb_hash_tombstone_value)
-		if (fn_free(h->alloc, h->arena, e->key.buffer) < 0)
-			r = -1;
-	if (e->value.buffer != cdb_hash_tombstone_value)
-		if (fn_free(h->alloc, h->arena, e->value.buffer) < 0)
-			r = -1;
+	if (h->alloc_key)
+		if (e->key.buffer != cdb_hash_tombstone_value)
+			if (fn_free(h->alloc, h->arena, e->key.buffer) < 0)
+				r = -1;
+	if (h->alloc_val)
+		if (e->value.buffer != cdb_hash_tombstone_value)
+			if (fn_free(h->alloc, h->arena, e->value.buffer) < 0)
+				r = -1;
 	e->key.buffer = NULL;
 	e->key.length = 0;
 	e->value.buffer = NULL;
@@ -826,6 +839,7 @@ int cdb_hash_delete(cdb_hash_t *h, const cdb_buffer_t *key) {
 		return -1;
 	if (r > 0) {
 		cdb_assert(e);
+		// TODO: Should we be freeing or should the caller?
 		if (cdb_hash_entry_free_contents(h, e) < 0)
 			return -1;
 		e->key.buffer = (char*)cdb_hash_tombstone_value; /* ! */
@@ -1080,3 +1094,4 @@ int cdb_extra_tests(const cdb_callbacks_t *ops, const char *testfile) {
 	cdb_assert(testfile);
 	return 0;
 }
+

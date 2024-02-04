@@ -517,7 +517,7 @@ int main(int argc, char **argv) {
 		switch (ch) {
 		case 'h': return help(stdout, argv[0]), 0;
 		case 'H': return hasher(stdin, stdout);
-		case 't': return -cdb_tests(&ops, opt.arg);
+		case 't': if (cdb_tests(&ops, opt.arg) < 0) return 1; return -cdb_extra_tests(&ops, opt.arg);
 		case 'v': verbose++;                       break;
 		case 'c': file = opt.arg; mode = CREATE;   break;
 		case 'd': file = opt.arg; mode = DUMP;     break;
