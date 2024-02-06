@@ -39,9 +39,7 @@ typedef struct {
 	cdb_hash_entry_t *items; /* List of hash table items, may be NULL depending on `length`, never access directly */
 	size_t used,             /* Number of `items` in use in hash table */
 	       length;           /* Length of `items` field in records */
-	unsigned error: 1,       /* A fatal error has occurred */
-		 alloc_key: 1,
-		 alloc_val: 1;
+	unsigned error: 1;       /* A fatal error has occurred */
 } cdb_hash_t; /* Hash table data structure */
 
 typedef struct {
@@ -107,15 +105,16 @@ void cdb_reverse_char_array(char * const r, const size_t length);
 int cdb_hash_create(cdb_allocator_fn alloc, void *arena, cdb_hash_t **hash);
 int cdb_hash_destroy(cdb_hash_t *h);
 int cdb_hash_exists(cdb_hash_t *h, const cdb_buffer_t *key);
-int cdb_hash_get(cdb_hash_t *h, const cdb_buffer_t *key, cdb_buffer_t **value);
-int cdb_hash_set(cdb_hash_t *h, const cdb_buffer_t *key, const cdb_buffer_t *value);
+int cdb_hash_get(cdb_hash_t *h, const cdb_buffer_t *key, cdb_buffer_t **value, uint64_t record);
+int cdb_hash_set(cdb_hash_t *h, const cdb_buffer_t *key, const cdb_buffer_t *value, uint64_t record);
+int cdb_hash_delete(cdb_hash_t *h, const cdb_buffer_t *key, uint64_t record);
 int cdb_hash_are_keys_unique(cdb_hash_t *h);
-int cdb_hash_delete(cdb_hash_t *h, const cdb_buffer_t *key);
 int cdb_hash_foreach(cdb_hash_t *h, int (*cb)(void *param, const cdb_buffer_t *key, const cdb_buffer_t *value), void *param);
 int cdb_hash_count(cdb_hash_t *h, size_t *count);
+cdb_hash_entry_t *cdb_hash_iterator(cdb_hash_t *h, size_t *iterator); /* using set/delete during iteration may result in errors */
 
 int cdb_hash_set_buffer(cdb_hash_t *h, const char *key, cdb_buffer_t *value);
-int cdb_hash_get_buffer(cdb_hash_t *h, const char *key, cdb_buffer_t *value);
+int cdb_hash_get_buffer(cdb_hash_t *h, const char *key, cdb_buffer_t **value);
 int cdb_hash_set_long(cdb_hash_t *h, const char *key, long value);
 int cdb_hash_get_long(cdb_hash_t *h, const char *key, long *value);
 int cdb_hash_set_string(cdb_hash_t *h, const char *key, const char *string);

@@ -129,7 +129,19 @@ static inline uint64_t cdb_get_mask(cdb_t *cdb) {
 }
 
 /* This is not 'djb2' hash - the character is xor'ed in and not added. This
- * has sometimes been called 'DJB2a'. */
+ * has sometimes been called 'DJB2a'. 
+ *
+ * This hash function should (possibly) be keyed, this unfortunately would
+ * break compatibility with the existing format. The reason is to help
+ * avoiding denial of service attacks based upon an attacker inserting
+ * keys in the database that exploit the properties of a hash to maximize
+ * collisions. This should be less of a concern in a *constant* database
+ * but it is possible under some scenarios that an attacker could influence
+ * the databases creation.
+ *
+ * The key, which should be randomly chosen, would replace the initial
+ * value of '5381'. If the CDB format had a header the key could be placed
+ * within, but it does not so it cannot. */
 static inline uint32_t cdb_djb_hash(const uint8_t *s, const size_t length) {
 	cdb_assert(s);
 	uint32_t h = 5381ul;
