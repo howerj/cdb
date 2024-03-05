@@ -33,6 +33,10 @@
  * - Generate perfect hash table from CDB/hash?
  * - Provide callbacks, or options, to control allocation and
  *   freeing in the hash table implementation.
+ *
+ * This could really be prototyped in python, the python script in
+ * the `readme.md` file would be a succinct starting point. Commands
+ * to load/store to disk into a hash would be trivial.
  */
 
 #include <assert.h>

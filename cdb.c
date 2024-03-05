@@ -141,7 +141,21 @@ static inline uint64_t cdb_get_mask(cdb_t *cdb) {
  *
  * The key, which should be randomly chosen, would replace the initial
  * value of '5381'. If the CDB format had a header the key could be placed
- * within, but it does not so it cannot. */
+ * within, but it does not so it cannot. 
+ *
+ * Another change would be to use the general form of a multiplicative
+ * hash, see <https://www.strchr.com/hash_functions>, which is:
+ *
+ * 	uint hash_multiplicative(const unsigned char *data, size_t length) {
+ * 		assert(data);
+ * 		uint hash = INITIAL_VALUE;
+ * 		for (size_t i = 0; i < length; i++) {
+ * 			hash = M * hash + data[i]; // or xor instead of add
+ * 		}
+ * 	}
+ *
+ * Where "M" is a specially chosen value.
+ */
 static inline uint32_t cdb_djb_hash(const uint8_t *s, const size_t length) {
 	cdb_assert(s);
 	uint32_t h = 5381ul;
