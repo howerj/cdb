@@ -148,9 +148,27 @@ static int cdb_memory_compare(const void *a, const void *b, size_t length) {
 	return memcmp(a, b, length);
 }
 
+typedef cdb_word_t (*cdb_hash_fn)(const uint8_t *s, const size_t length);
+
 cdb_word_t cdb_hash(const uint8_t *s, const size_t length) {
 	cdb_assert(s);
 	return cdb_djb_hash(s, length);
+}
+
+/* A 64-bit hash has to be used for the 64-bit database version otherwise if 
+ * we used a 32-bit hash all of our keys and values would be
+ * stored...suboptimally. */
+static cdb_word_t cdb_hash64(const uint8_t *s, const size_t length) {
+	cdb_assert(s);
+	/* SDBM hash see: <http://www.cse.yorku.ca/~oz/hash.html>
+	and <https://www.partow.net/programming/hashfunctions> */
+	assert(sizeof(cdb_word_t) >= sizeof(uint64_t));
+	uint64_t hash = 0xA5A5A5A5A5A5A5A5ull;
+	for (size_t i = 0; i < length; i++) {
+		const uint64_t ch = s[i];
+		hash = ch + (hash << 6) + (hash << 16) - hash;
+	}
+	return hash;
 }
 
 static void cdb_preconditions(cdb_t *cdb) {
@@ -438,7 +456,7 @@ fail:
 int cdb_open(cdb_t **cdb, const cdb_options_t *ops, const int create, const char *file) {
 	/* We could allow the word size of the CDB database {16, 32 (default) or 64}
 	 * to be configured at run time and not compile time, this has API related
-	 * consequences, the size of 'cdb_word_t' would determine maximum size that
+	 * consequences, the size of 'cdb_word_t' would determine the maximum size that
 	 * could be supported by this library. 'cdb_open' would have to take another
 	 * parameter or one of the structures passed in would need to be extended. */
 	cdb_assert(cdb);
@@ -466,8 +484,9 @@ int cdb_open(cdb_t **cdb, const cdb_options_t *ops, const int create, const char
 		goto fail;
 	memset(c, 0, csz);
 	c->ops         = *ops;
+	const cdb_hash_fn hash_fn = c->ops.size >= 64 ? cdb_hash64 : cdb_hash;
 	c->ops.size    = c->ops.size    ? c->ops.size / CHAR_BIT : (32ul / CHAR_BIT);
-	c->ops.hash    = c->ops.hash    ? c->ops.hash    : cdb_hash;
+	c->ops.hash    = c->ops.hash    ? c->ops.hash    : hash_fn;
 	c->ops.compare = c->ops.compare ? c->ops.compare : cdb_memory_compare;
 	c->create      = create;
 	c->empty       = 1;
@@ -779,7 +798,7 @@ fail:
 	return cdb_error(cdb, CDB_ERROR_E);
 }
 
-uint64_t cdb_prng(uint64_t s[2]) { /* XORSHIFT128: A few rounds of SPECK or TEA ciphers also make good PRNG */
+uint64_t cdb_prng(uint64_t s[2]) { /* XORSHIFT128: A few rounds of SPECK or TEA ciphers also make good PRNGs */
 	cdb_assert(s);
 	if (!s[0] && !s[1])
 		s[0] = 1;
@@ -862,8 +881,8 @@ int cdb_tests(const cdb_options_t *ops, const char *test_file) {
 		char *v = ts[i].value;
 		const cdb_word_t kl = (cdb_prng(s) % (klen - 1ul)) + 1ul;
 		const cdb_word_t vl = (cdb_prng(s) % (vlen - 1ul)) + 1ul;
-		for (unsigned long j = 0; j < kl; j++)
-			k[j] = 'a' + (cdb_prng(s) % 26);
+		for (unsigned long j = 0; j < kl; j++) 
+			k[j] = 'a' + (cdb_prng(s) % 26); /* this is biased, so what, fight me */
 		for (unsigned long j = 0; j < vl; j++)
 			v[j] = 'a' + (cdb_prng(s) % 26);
 		const cdb_buffer_t key   = { .length = kl, .buffer = k };
