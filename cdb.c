@@ -170,9 +170,27 @@ static int cdb_memory_compare(const void *a, const void *b, size_t length) {
 	return memcmp(a, b, length);
 }
 
+typedef cdb_word_t (*cdb_hash_fn)(const uint8_t *s, const size_t length);
+
 CDB_EXPORT cdb_word_t cdb_hash(const uint8_t *s, const size_t length) {
 	cdb_assert(s);
 	return cdb_djb_hash(s, length);
+}
+
+/* A 64-bit hash has to be used for the 64-bit database version otherwise if 
+ * we used a 32-bit hash all of our keys and values would be
+ * stored...suboptimally. */
+static cdb_word_t cdb_hash64(const uint8_t *s, const size_t length) {
+	cdb_assert(s);
+	/* SDBM hash see: <http://www.cse.yorku.ca/~oz/hash.html>
+	and <https://www.partow.net/programming/hashfunctions> */
+	assert(sizeof(cdb_word_t) >= sizeof(uint64_t));
+	uint64_t hash = 0xCAFEBABEBEEFD00Dull;
+	for (size_t i = 0; i < length; i++) {
+		const uint64_t ch = s[i];
+		hash = ch + (hash << 6) + (hash << 16) - hash;
+	}
+	return hash;
 }
 
 static void cdb_preconditions(cdb_t *cdb) {
@@ -489,8 +507,9 @@ CDB_EXPORT int cdb_open(cdb_t **cdb, const cdb_callbacks_t *ops, const int creat
 		goto fail;
 	memset(c, 0, csz);
 	c->ops         = *ops;
+	const cdb_hash_fn hash_fn = c->ops.size >= 64 ? cdb_hash64 : cdb_hash;
 	c->ops.size    = c->ops.size    ? c->ops.size / CHAR_BIT : (32ul / CHAR_BIT);
-	c->ops.hash    = c->ops.hash    ? c->ops.hash    : cdb_hash;
+	c->ops.hash    = c->ops.hash    ? c->ops.hash    : hash_fn;
 	c->ops.compare = c->ops.compare ? c->ops.compare : cdb_memory_compare;
 	c->create      = create;
 	c->empty       = 1;

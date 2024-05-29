@@ -36,6 +36,8 @@ and values of a given length.
 **This library can create 16, 32 and 64 bit versions of the CDB file format
 removing one of the major limitations of the 32-bit version.**
 
+**The 64-bit version of the database uses a different hash than djb2**.
+
 # OPTIONS
 
 **-h** : print out this help message and exit successfully
@@ -212,10 +214,12 @@ populated entries in the hash table.
 A key-value pair is stored as two words containing the key length and the value
 length in that order, then the key, and finally the value.
 
-The hashing algorithm used is similar to [djb2][], but with a minor
-modification that an exclusive-or replaces an addition. The algorithm calculates
-hashes of the size of a word, the initial hash value is the special number '5381'.
-The hash is calculated as the current hash value multiplied by 33, to which the
+The hashing algorithm used is similar to [djb2][] (except for the 64-bit
+version, which uses a 64-bit variant of SDBM hash), but with a minor modification that 
+an exclusive-or replaces an addition. 
+
+The algorithm calculates hashes of the size of a word, the initial hash value is the special 
+number '5381'.  The hash is calculated as the current hash value multiplied by 33, to which the
 new byte to be hashes and the result of multiplication under go an exclusive-or
 operation. This repeats until all bytes to be hashed are processed. All
 arithmetic operations are unsigned and performed modulo 2 raised to the power

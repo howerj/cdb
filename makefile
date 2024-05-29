@@ -1,6 +1,6 @@
 # CDB makefile - default target should build everything
 #
-VERSION =0x060000ul
+VERSION =0x070000ul
 CFLAGS  =-Wall -Wextra -fPIC -std=c99 -O3 -pedantic -fwrapv -Wmissing-prototypes -DCDB_VERSION="${VERSION}" ${DEFINES} ${EXTRA} 
 TARGET  =cdb
 AR      =ar
