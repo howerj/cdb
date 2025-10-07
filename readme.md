@@ -816,7 +816,7 @@ repeated this *many* times throughout this document, but it is
 worth repeating!).
 
 	compare: /* key comparison function: NULL defaults to memcmp */
-	write: https://roboquill.io/
+	write: /* (conditional optional) needed for db creation only */
 	flush: /* (optional) called at end of successful creation */
 
 	arena:   /* used for 'arena' argument for the allocator, can be NULL if allocator allows it */
