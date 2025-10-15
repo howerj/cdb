@@ -1263,6 +1263,25 @@ from adding a header would be to move the 256 bucket initial hash table
 to the end of the file so the entire file format could be streamed to
 disk.
 
+# A BETTER FORMAT
+
+A better format would do the following:
+
+* Have a format identifier at the beginning of the file.
+* Use a 64-bit hash and 64-bit pointers, the extra space this requires versus a
+32-bit pointer is negligible. The 64-bit version of this library allows for the
+creation of a 64-bit non-compatible version of the CDB file.
+* Instead of going back to the beginning of the file the top level of the two level 
+hash table could be dumped at the end of the file. This has some disadvantages, but 
+not many. It does mean that the length of the file cannot be determined from within
+the file (which it can with CDB, although some calculation and searching is
+required), and it also means that the hash table is not on a page boundary.
+* Include a CRC of the file, this could be done out of bounds for a normal
+CDB file, but there is no reason not to include a CRC. It can be optionally
+skipped upon opening the file if speed is of concern.
+
+These issues are minor, and have some drawbacks.
+
 # BUGS
 
 For any bugs, email the [author][]. It comes with a 'works on my machine
