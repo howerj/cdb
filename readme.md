@@ -25,18 +25,29 @@ cdb -H
 
 A clone of the [CDB][] database, a simple, read-only (once created) database.
 The database library is designed so it can be embedded into a microcontroller
-if needed. This program can be used for creating and querying CDB databases,
-which consist of key-value pairs of binary data.
+if needed and has very low memory requirements that are configurable. This 
+program can be used for creating and querying CDB databases, which consist 
+of key-value pairs of binary data.
 
 This program also includes several options that help in testing out the
 database, one for hashing input keys and printing the hash for the default hash
 function and another one for generating a database with (Pseudo-)random keys
 and values of a given length.
 
+There are some example database available at
+<https://github.com/howerj/cdbdbs> that can be used in conjunction with this
+library or other CDB compatible tools for testing purposes.
+
 **This library can create 16, 32 and 64 bit versions of the CDB file format
 removing one of the major limitations of the 32-bit version.**
 
-**The 64-bit version of the database uses a different hash than djb2**.
+**A new 64-bit version of CDB has been released, available at 
+<https://cdb.cr.yp.to/index.html>, this means some of the documentaiton here is 
+out of date, and the new format will need to be implemented and tested for capatibility 
+with this version.**
+
+**The 64-bit version of the database uses a different hash than djb2, this will
+be resolved with flags in future releases.**
 
 # OPTIONS
 
@@ -118,8 +129,8 @@ tools.
 # RETURN VALUE
 
 cdb returns zero on success/key found, and a non zero value on failure. Two is
-returned if a key is not found, any other value indicates a more serious
-failure.
+returned if a key is not found when searching for keys, any other value 
+indicates a more serious failure.
 
 # LIMITATIONS
 
@@ -132,7 +143,7 @@ arbitrary limitation is a bug in the implementation.
 
 The minimum size of a CDB file is 256 \* 2 \* (N/8) bytes.
 
-It should be noted that if you build a N bit (where N is 16, 32 or 64) 
+It should be noted that if you build an N-bit (where N is 16, 32 or 64) 
 version of this library you are limited to creating databases that are the
 size of N and less, e.g. If `cdb_word_t` is set to `uint32_t`, and therefore
 the 32-bit version of this library is being built, then you can create 32-bit
@@ -153,7 +164,7 @@ a newline terminating the record, the format is:
 	+key-length,value-length:KEY->VALUE
 
 Despite the presence of textual data, the input key and value can contain
-binary data, including the ASCII NUL character.
+binary data, including the ASCII NUL characters or newlines.
 
 An example, encoding the key value pair "abc" to "def" and "G" to "hello":
 
@@ -185,9 +196,9 @@ of 256 2-word values forming an initial hash table that point to the hash
 tables at the end of the file, the key-value records, and then up to 256 hash
 tables pointing to the key-value pairs.
 
-A word consists of a 4-byte/32-bit value (although this may be changed via
-compile time options, creating an incompatible format). All word values are
-stored in little-endian format.
+A word consists of a 4-byte/32-bit value (or 2-bytes for the 16-bit format,
+and 8-bytes for the 64-bit format). All word values are stored in little-endian 
+format.
 
 The initial hash table contains an array of 256 2-word values.
 The words are; a position of a hash table in the file and the number of buckets
@@ -196,34 +207,37 @@ hashed, the lowest eight bits of the hash are used to index into the initial tab
 and if there are values in this hash the search then proceeds to the second hash
 table at the end of the file.
 
-The hash tables at the end of the file contains an array of two word records,
-containing the full hash and a file position of the key-value pair. To search
-for a key in this table the hash of the key is taken and the lowest eight bits
-are discarded by shifting right eight places, the hash is then taken modulo the
-number of elements in the hash table, the resulting value is used as an initial
-index into the hash table. Searching continues until the key is found, or an
-empty record is found, or the number of records in the table have been searched
-through with no match. A key is compared by looking at the hash table records,
-if the hash of the key matches the stored hash in the hash table records then a
-possible match is found, the file position is then used to look up the
-key-value pair and the key is compared.
+The hash tables at the end of the file, after the initial hash table and
+key-value pairs, contains an array of two word records, with the full
+hash and a file position of the key-value pair. To search for a key in this
+table the hash of the key is taken and the lowest eight bits are discarded
+by shifting right eight places, the hash is then taken modulo the number
+of elements in the hash table, the resulting value is used as an initial
+index into the hash table. Searching continues until the key is found, or
+an empty record is found, or the number of records in the table have been
+searched through with no match. A key is compared by looking at the hash
+table records, if the hash of the key matches the stored hash in the hash
+table records then a possible match is found, the file position is then used
+to look up the key-value pair and the key is compared.
 
 The number of buckets in the hash table is chosen as twice the number of
-populated entries in the hash table.
+populated entries in the hash table, so the hash table does not become
+too full degrading performance.
 
 A key-value pair is stored as two words containing the key length and the value
 length in that order, then the key, and finally the value.
 
 The hashing algorithm used is similar to [djb2][] (except for the 64-bit
-version, which uses a 64-bit variant of SDBM hash), but with a minor modification that 
+version of this library, which uses a 64-bit variant of SDBM hash, others use
+djb2 extended to 64-bits), but with a minor modification that 
 an exclusive-or replaces an addition. 
 
-The algorithm calculates hashes of the size of a word, the initial hash value is the special 
-number '5381'.  The hash is calculated as the current hash value multiplied by 33, to which the
-new byte to be hashes and the result of multiplication under go an exclusive-or
-operation. This repeats until all bytes to be hashed are processed. All
-arithmetic operations are unsigned and performed modulo 2 raised to the power
-of 32.
+The algorithm calculates hashes of the size of a word, the initial hash
+value is the special number '5381'.  The hash is calculated as the current
+hash value multiplied by 33, to which the new byte to be hashes and the
+result of multiplication under go an exclusive-or operation. This repeats
+until all bytes to be hashed are processed. All arithmetic operations are
+unsigned and performed modulo 2 raised to the power of 32.
 
 The pseudo code for this is:
 
@@ -235,13 +249,14 @@ The pseudo code for this is:
 Note that there is nothing in the file format that disallows duplicate keys in
 the database, in fact the API allows duplicate keys to be retrieved. Both key
 and data values can also be zero bytes long. There are also no special
-alignment requirements on the data.
+alignment requirements on the data, data is packed as tightly as possible.
 
 The best documentation on the file format is a small pure python script that
 implements a set of functions for manipulating a CDB database, a description is
 available here <http://www.unixuser.org/~euske/doc/cdbinternals/> and the
-script itself is available at the bottom of that page
-<http://www.unixuser.org/~euske/doc/cdbinternals/pycdb.py>.
+script itself is available at the bottom of that page at
+<http://www.unixuser.org/~euske/doc/cdbinternals/pycdb.py>, it has also been
+incorporated into the bottom of this file for posterity.
 
 A visualization of the overall file structure:
 
@@ -296,20 +311,20 @@ table written after those keys, anything that creates a database will have
 to seek to the beginning of the file to rewrite the header, this could have
 been avoided by storing the 256 initial hash table results at the end of
 the file allowing a database to be constructed in a Unix filter, but alas,
-this is not possible. Also of note, by passing in a custom hash algorithm to
-the C API you have much more control over where each of the key-value pairs
-get stored, specifically, which bucket they will end up in by controlling
-the lowest 8-bits (for example you could set the lowest 8-bits to the first
-byte in the key in a custom hash).
+this is not possible (and has some downsides). 
 
-Note that there is nothing stopping you storing the key-value pairs in
-some kind of order, you could do this by adding the keys in lexicographic
-order for a database sorted by key. Retrieving keys using the C function
-"cdb\_foreach" would allow you retrieve keys in order. The hash table itself
-would remain unaware of this order. Dumping the key-value pairs would maintain
-this order as well. There is no guarantee other tools will preserve this
-order however (they may dump key-value pairs backwards, or by going through
-the hash table).
+Also of note, by passing in a custom hash algorithm to the C API you have much
+more control over where each of the key-value pairs get stored, specifically,
+which bucket they will end up in by controlling the lowest 8-bits (for example
+you could set the lowest 8-bits to the first byte in the key in a custom hash).
+
+Note that there is nothing stopping you storing the key-value pairs in some
+kind of order, you could do this by adding the keys in lexicographic order for
+a database sorted by key. Retrieving keys using the C function "cdb\_foreach"
+would allow you retrieve keys in order. The hash table itself would remain
+unaware of this order. Dumping the key-value pairs would maintain this order
+as well. There is no guarantee other tools will preserve this order however
+(they may dump key-value pairs backwards, or by going through the hash table).
 
 # CDB C API OVERVIEW
 
@@ -327,9 +342,11 @@ There are a few goals that the API has:
 Some of these goals are in conflict, being able to control allocations and
 having minimal dependencies allow the library to be used in an embedded system,
 however it means that in order to do very basic things the user has to
-provide a series of callbacks. The callbacks are simple to implement on a
-hosted system, examples are provided in [main.c][] and [host.c][] in the
-project repository, but this means the library is not just read to use.
+provide a series of callbacks thus making the library more complicated to use. 
+
+The callbacks are simple to implement on a hosted system, examples are
+provided in [main.c][] and [host.c][] in the project repository, but this
+means the library is not just read to use.
 
 There are two sets of operations that most users will want to perform; creating
 a database and reading keys. After the callbacks have been provided, to create
@@ -394,7 +411,10 @@ The function 'cdb\_status' can be used to query what error has occurred, if
 any. On an error a negative value is returned, the meaning of this value is
 deliberately not included in the header as the errors recorded and the
 meaning of their values may change. Use the source for the library to determine
-what error occurred.
+what error occurred if needed. The reason for this is so that you can debug
+problems if they happen but you are prevented from relying on the existence
+of codes having specific meaning (which are subject to arbitrary change between
+versions).
 
 The function 'cdb\_version' returns the version number in an out parameter
 and information about the compile time options selected when the library was built.
@@ -408,19 +428,17 @@ would complicate the implementation and the API.
 
 ## C API FUNCTIONS
 
-The C API contains 13 functions and some callbacks, more than is
-desired, but they all have their uses. Ideally a library would
-contain far fewer functions and require less of a cognitive burden
-on the user to get right, however making a generic enough C library
-and using C in general requires more complexity than is usual, but
-not more than is necessary.
+The C API contains 13 functions and some callbacks, more than is desired,
+but they all have their uses. Ideally a library would contain far fewer
+functions and require less of a cognitive burden on the user to get right,
+however making a generic enough C library and using C in general requires
+more complexity than is usual, but not more than is necessary.
 
-There is regularity in these functions, they all return negative
-on failure (the only exception being the allocator callback that
-returns a pointer), most of the functions accept a "cdb\_t" structure
-as well, which is an [opaque pointer][] (opaque pointers are not
-an unalloyed good, they imply that an allocator must be used, which
-can be a problem in embedded systems).
+There is regularity in these functions, they all return negative on failure
+(the only exception being the allocator callback that returns a pointer),
+most of the functions accept a "cdb\_t" structure as well, which is an
+[opaque pointer][] (opaque pointers are not an unalloyed good, they imply
+that an allocator must be used, which can be a problem in embedded systems).
 
 	int cdb_open(cdb_t **cdb, const cdb_options_t *ops, int create, const char *file);
 	int cdb_close(cdb_t *cdb);
@@ -477,7 +495,7 @@ The "mode" parameter to the "open" callback will be set to "CDB\_RW\_MODE" if
 "create" is non-zero, and will be set to "CDB\_RO\_MODE" if it is zero.
 
 CDB\_RW\_MODE is an enumeration that has the value "1", whilst
-CDB\_RW\_MODE has the value "0".
+CDB\_RO\_MODE has the value "0".
 
 "cdb\_open" does quite a lot, when opening a CDB file for reading the
 file is *partially* verified, when opening for writing a blank first level
@@ -490,27 +508,27 @@ present when the database is opened up in write mode.
 
 * cdb\_close
 
-This closes the CDB database handle, the handle may be NULL, if so,
-nothing will be done. The same handle should not be passed in twice
-to "cdb\_close" as this can cause double-free errors. This function
-will release any memory and handles (by calling the "close" callback)
-associated with the handle.
+This closes the CDB database handle, the handle may be NULL, if so, nothing
+will be done. The same handle should not be passed in twice to "cdb\_close"
+as this can cause double-free errors. This function will release any memory
+and handles (by calling the "close" callback) associated with the handle.
 
-When writing a database this function has one more task to do, and
-that is finalizing the database, it writes out the hash-table at
-the end of the file. If "cbd\_close" is not called after the
-last entry has been added then the database will be in an invalid
-state and will not work.
+When writing a database this function has one more task to do, and that
+is finalizing the database, it writes out the hash-table at the end of the
+file. If "cbd\_close" is not called after the last entry has been added then
+the database will be in an invalid state and will not work (although the
+database could technically be recovered either manually or with hypothetical
+recovery tools).
 
-This function may return negative on error, for example if the
-finalization fails.
+This function may return negative on error, for example if the finalization
+fails.
 
 After calling "cdb\_close" the handle *must not* be used again.
 
 * cdb\_read
 
 To be used on a database opened up in read-mode only. This can
-be used to read values, and sometimes keys, from the database. This
+be used to read values, and keys, from the database. This
 function does not call "cdb\_seek", the caller must call "cdb\_seek"
 before calling this function to move the file pointer to the
 desired location before reading. The file pointer will be updated
@@ -532,12 +550,13 @@ after the final "cdb\_add" has been added.
 It is unfortunate that both the key and value must reside within
 memory, but doing anything else would complicate the API too much.
 
-One the key and value have been added they can be freed or discarded
+Once the key and value have been added they can be freed or discarded
 however.
 
-Adding key-value pairs consumes disk space and some extra memory
-which is needed to store the second level hash table, however the
-keys and values are not kept around in memory by the CDB library.
+Adding key-value pairs consumes disk space (or wherever you chose to
+store the data) and some extra memory which is needed to store the second 
+level hash table, however the keys and values are not kept around in memory 
+by the CDB library and can be freed by yourself after calling "cdb\_add".
 
 Note that this function will add duplicate keys without complaining,
 and can add zero length keys and values, likewise without complaining.
@@ -563,28 +582,32 @@ This function must be called before each call to "cdb\_read" or
 Calling "cdb\_seek" multiple times on the same location has no
 effect (the "fseek" C standard library function may discard buffers
 if called multiple times on the same location even though the file
-position has not changed).
+position has not changed, resulting in a performance degradation).
+
+There is currently no way to query the file position (although it
+is stored internally to the library).
 
 * cdb\_foreach
 
-The "cdb\_foreach" function calls a callback for each value within
-the CDB database. The callback is passed an optional "param". If
-the callback returns negative or a non-zero number then the for-each
-loop is terminated early (a positive number is returned, a negative
-number results in -1 being returned). If the callback returns zero
-then the next value, if any, is processed with the callback being
-called again.
+The "cdb\_foreach" function calls a callback for each value within the CDB
+database. The callback is passed an optional "param", that you may use to
+store a pointer to value or structure. If the callback returns negative or
+a non-zero number then the for-each loop is terminated early (a positive
+number is returned, a negative number results in -1 being returned). If the
+callback returns zero then the next value, if any, is processed with the
+callback being called again.
 
-The callback is passed a structure which contains the location
-within the CDB database that contains the key and value. The keys
-and values are not presented in any specific order and the order
-should not be expected to stay the same between calls.
+The callback is passed a structure which contains the location within the
+CDB database that contains the key and value. The keys and values are not
+presented in any specific order and the order should not be expected to stay
+the same between calls.
 
-To read either a key or a value you must call "cdb\_seek" before
-calling "cdb\_read" yourself.
+To read either a key or a value you must call "cdb\_seek" before calling
+"cdb\_read" yourself.
 
-Passing in NULL is allowed and is not a No-Operation, it can be
-used to effectively check the integrity of the database.
+Passing in NULL is allowed and is not a No-Operation, it can be used to
+check the integrity of the database as much as is possible without
+checksums being present.
 
 * cdb\_read\_word\_pair
 
@@ -593,85 +616,84 @@ is a helper function that strictly does not need to exist, it is
 used for reading two "cdb\_word\_t" values from the database. This
 can be useful for the library user for more detailed analysis of
 the database than would normally be possible, many values within
-the database are stored as two "cdb\_word\_t" values. Looking inside this
-read-only database is not discouraged and the file format is well
-documented.
+the database are stored as two "cdb\_word\_t" values. Looking inside at
+the raw binary data of this read-only database is not discouraged as the 
+file format is well documented.
 
 This function does not call "cdb\_seek", that must be called
 before hand to seek to the desired file location. The file position
-will be updated to point after the two read values.
+will be updated to point after the two read values (by the read
+callback provided by you!).
 
 * cdb\_get
 
 This function populates the "value" structure if the "key" is found
 within the CDB database. The members of "value" will be set to zero
 if a key is not found, if it is found the position will be non-zero,
-although the length may be zero.
+although the length may be zero as zero length values, and keys, are
+allowed.
 
-Note that this function does not actually retrieve the key and put it
-into a buffer, there is a very good reason for that. It would be easy
-enough to make such a function given the functions present in this
-API, however in order to make such a function it would have to do
-the following; allocate enough space to store the value, read the
-value off of disk and then return the result. This has massive performance
-implications. Imagine if a large value is stored in the database, say
-a 1GiB value, this would mean at least 1GiB of memory would need to
-be allocated, it would also mean all of the file buffers would have
-been flushed and refilled, and all of that data would need to be copied
-from disk to memory. This might be desired, it might also be *very*
-wasteful, especially if only a fraction of the value is actually
-needed (say the first few hundred bytes). Whether this is wasteful
-depends entirely on your workload and use-cases for the database.
+Note that this function does not actually retrieve the key and put it into a
+buffer, there is a very good reason for that. It would be easy enough to make
+such a function given the functions present in this API, however in order
+to make such a function it would have to do the following; allocate enough
+space to store the value, read the value off of disk and then return the
+result. This has massive performance implications. Imagine if a large value
+is stored in the database, say a 1GiB value, this would mean at least 1GiB of
+memory would need to be allocated, it would also mean all of the file buffers
+would have been flushed and refilled, and all of that data would need to be
+copied from disk to memory. This might be desired, it might also be *very*
+wasteful, especially if only a fraction of the value is actually needed
+(say the first few hundred bytes). There are also systems that have very
+little RAM and a large amount of storage, if the API allocated internally
+it would be impossible to read these values off of disk (a common error in
+many C libraries that prevent their usage in embedded systems). Whether this
+is wasteful depends entirely on your workload and use-cases for the database.
 
-It is better to give the user tools to do what they need than insisting
-it be done one, limiting, although "easy", way.
+It is better to give the user tools to do what they need rather than 
+insisting it be done one, limiting, although "easy", way.
 
-This does mean that to actually retrieve the value the user must
-perform their own "cdb\_seek" and "cdb\_read" operations. This
-means that the entire value does not need to read into memory
-be the consumer, and potentially be processed block by block by
-the "read" callback if needed.
+This does mean that to actually retrieve the value the user must perform
+their own "cdb\_seek" and "cdb\_read" operations. This means that the entire
+value does not need to read into memory be the consumer, and potentially be
+processed block by block by the "read" callback if needed.
 
 * cdb\_lookup
 
-"cdb\_lookup" is similar to "cdb\_get" except it accepts an
-optional record number. Everything that applies to the get-function
-applies to the lookup-function, the only difference is the record
-number argument (internally "cdb\_get" is implemented with
-"cdb\_lookup").
+"cdb\_lookup" is similar to "cdb\_get" except it accepts an optional
+record number. Everything that applies to the get-function applies to the
+lookup-function, the only difference is the record number argument (internally
+"cdb\_get" is implemented with "cdb\_lookup").
 
-If there are two or more keys that are identical then the question
-of how to select a specific key arises. This is done with an
-arbitrary number that will most likely, but is not guaranteed, to
-be the order in which the key was added into the database, with the
-first value being zero and the index being incremented from there
-on out.
+If there are two or more keys that are identical then the question of how
+to select a specific key arises. This is done with an arbitrary number that
+will most likely, but is not guaranteed, to be the order in which the key
+was added into the database, with the first value being zero and the index
+being incremented from there on out.
 
-If the key is found but the index is out of bounds it is treated
-as if the key does not exist. Use "cdb\_count" to calculate the
-maximum number records per key if needed, it is far more expensive
-to repeatedly call "cdb\_lookup" on a key until it returns "key
-not found" to determine the number of duplicate keys than it is
-to call "cdb\_count".
+If the key is found but the index is out of bounds it is treated as if the
+key does not exist. Use "cdb\_count" to calculate the maximum number records
+per key if needed, it is far more expensive to repeatedly call "cdb\_lookup"
+on a key until it returns "key not found" to determine the number of duplicate
+keys than it is to call "cdb\_count".
 
-The index argument perhaps should be a "cdb\_word\_t", but there
-is always debate around these topics (personally if I were to
-design a C-like programming language everything integers would default
-to 64-bits and all pointers would fit within that, other types
-for indexing and the like would also be 64-bit, that's not a
-criticism of C, the madness around integer types was born out
-of necessity).
+The index argument perhaps should be a "cdb\_word\_t", but there is always
+debate around these topics (personally if I were to design a modern C-like
+programming language everything integer related would default to 64-bits,
+and all pointers would fit within that, other types for indexing and the
+like would also be 64-bit. This is not a criticism of C, the madness around
+integer types was born out of necessity where the word size could not even
+be guaranteed to be a multiple of eight).
 
 * cdb\_count
 
-The "cdb\_count" function counts the number of entries that
-have the same key value. This function requires potentially multiple
-seeks and reads to compute, so the returned value should be cached if
-you plan on using it again as the value is expensive to calculate.
+The "cdb\_count" function counts the number of entries that have the same
+key value. This function requires multiple seeks and reads to compute, so
+the returned value should be cached if you plan on using it again as the
+value is expensive to calculate.
 
-If the key is not found, a value indicating that will be returned
-and the count argument will be zeroed. If found, the count will
-be put in the count argument.
+If the key is not found, a value indicating that will be returned and the count
+argument will be zeroed. If found, the count will be put in the count argument.
 
 * cdb\_status
 
@@ -681,7 +703,10 @@ a CDB database then there is no way to clear that error short of
 reopening the database with a new handle. The only valid operation
 to do after getting an error from any of the functions that operate
 on a "cdb\_t" handle is to call "cdb\_status" to query the error
-value that is stored internally.
+value that is stored internally, and to call "cdb\_close" on that
+handle (only once).
+
+You cannot call "cdb\_status" on a closed handle.
 
 "cdb\_status" should return a zero on no error and a negative value
 on failure. It should not return a positive non-zero value.
@@ -704,32 +729,31 @@ And the callback for "cdb\_foreach":
 
 * "cdb\_callback"
 
-This callback is called for each value within the CDB database
-when used with "cdb\_foreach". If a negative value is returned from
-this callback then the foreach loop will end early and an error value
-will be returned. If the value returned is greater than zero then
-the foreach loop will terminate potentially early. If zero the
-foreach loop will continue to the next key-value pair if available.
+This callback is called for each value within the CDB database when used with
+"cdb\_foreach". If a negative value is returned from this callback then the
+foreach loop will end early and an error value will be returned. If the
+value returned is greater than zero then the foreach loop will terminate
+potentially early. If zero the foreach loop will continue to the next
+key-value pair if available.
 
-Each time this callback is called by "cdb\_foreach" it will be
-passed in a key-value pair in the form of two length/file-location
-structures. You will need to seek to those locations and call
-read the key-values yourself. There is no guarantee the file position
-is in the correct location (ie. Pointing to the location of the
-key), so call "cdb\_seek" before calling "cdb\_read".
+Each time this callback is called by "cdb\_foreach" it will be passed in a
+key-value pair in the form of two length/file-location structures. You will
+need to seek to those locations and call read the key-values yourself. There
+is no guarantee the file position is in the correct location (ie. Pointing
+to the location of the key), so call "cdb\_seek" before calling "cdb\_read".
 
-There is no guarantee that the key-value pairs will be presented
-in the same order each time the function is called and should not
-be counted on. There is no attempt to preserve order.
+There is no guarantee that the key-value pairs will be presented in the same
+order each time the function is called and should not be counted on. There
+is no attempt to preserve order.
 
 See "cdb\_foreach" for more information.
 
 ## C API STRUCTURES
 
 The C API has two simple structures and one complex one, the latter being
-more of a container for callbacks (or, some might say, a way of doing
-object oriented programming in C). The complex structure, "cdb\_options\_t",
-is an unfortunate necessity.
+more of a container for callbacks (or, some might say, a way of doing object
+oriented programming in C). The complex structure, "cdb\_options\_t", is an
+unfortunate necessity.
 
 The other two structures, "cdb\_buffer\_t" and "cdb\_file\_pos\_t", are
 simple enough and need very little explanation, although they will be.
@@ -952,13 +976,13 @@ are directly suitable for use in [Embedded systems][] and are much less
 flexible than they could be in general. Embedded systems pose some interesting
 constraints (eschewing allocation via "malloc", lack of a file-system, and
 more). By designing the library for an embedded system we can make a library
-more useful not only for those systems but for hosted systems as well (eg. By
+more useful not only for those systems but for hosted systems as well (e.g. By
 providing callbacks for the FILE functions we can redirect them to wherever
 we like, the CDB file could be stored remotely and accessed via TCP, or it
 could be stored locally using a normal file, or it could be stored in memory).
 
 There are two sets of functions that should be abstracted out in nearly
-every library, memory allocation (or even better, the caller can pass in
+every C library, memory allocation (or even better, the caller can pass in
 fixed length structures if possible) and Input/Output functions (including
 logging!). This library does both.
 
@@ -987,9 +1011,10 @@ One mistake that is often seen is API functionality that is conditional
 upon an macro. This complicates the build system along with every piece of
 software that is dependent on those optional calls. The most common function
 to be optionally compiled in are test suite related functions if they are
-present. For good reason these test suites might need to be removed from builds
-(as they might take up large amounts of space for code even if they are not
-needed, which is at a premium in embedded systems with limited flash memory).
+present, another is logging. For good reason these test suites might need 
+to be removed from builds (as they might take up large amounts of space for 
+their code even if they are not needed, which is at a premium in embedded 
+systems with limited flash memory).
 
 The header often contains code like this:
 
@@ -1037,7 +1062,6 @@ And the *relevant* bits of code/pseudo-code:
 		return NEXT_PRNG;
 	}
 
-
 	int cdb_tests(const cdb_options_t *ops, const char *test_file) {
 		assert(ops);
 		assert(test_file);
@@ -1084,7 +1108,31 @@ when refactoring code. Not only that, but because "xorshift128" which
 false it to will be eliminated from the compiled object file so long as no
 other function calls it. In actual fact, the code has changed since
 this has been written and "cdb\_prng" is exposed in the header as it is
-useful in [main.c][], which is equivalent to "xorshift128".
+useful in [main.c][], "cdb\_prng" is backed by "xorshift128", so is no
+longer static.
+
+It should be noted that this does not just apply to unit tests, as mentioned
+this can also apply to logging code, or any code that is to be optionally
+compiled in.
+
+	#ifndef CONFIG_OPTION_BLAH
+	#define CONFIG_OPTION_BLAH (0)
+	#endif
+
+	void func(void) {
+		if (CONFIG_OPTION_BLAH) {
+			/* conditional code */
+		}
+	}
+
+Is much easier to maintain and read than:
+
+	void func(void) {
+	#ifdef CONFIG_OPTION_BLAH
+		/* conditional code */
+	#endif
+	}
+
 
 # BUILD REQUIREMENTS
 
@@ -1270,7 +1318,8 @@ A better format would do the following:
 * Have a format identifier at the beginning of the file.
 * Use a 64-bit hash and 64-bit pointers, the extra space this requires versus a
 32-bit pointer is negligible. The 64-bit version of this library allows for the
-creation of a 64-bit non-compatible version of the CDB file.
+creation of a 64-bit non-compatible version of the CDB file. The newer version
+of CDB library does this, as does this one.
 * Instead of going back to the beginning of the file the top level of the two level 
 hash table could be dumped at the end of the file. This has some disadvantages, but 
 not many. It does mean that the length of the file cannot be determined from within
@@ -1280,7 +1329,9 @@ required), and it also means that the hash table is not on a page boundary.
 CDB file, but there is no reason not to include a CRC. It can be optionally
 skipped upon opening the file if speed is of concern.
 
-These issues are minor, and have some drawbacks.
+These issues are minor, and have some drawbacks, they are also not sufficient
+to create a new format that is incompatible with all the tooling already out
+there.
 
 # BUGS
 

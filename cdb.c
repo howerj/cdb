@@ -49,7 +49,7 @@
  * stop error codes becoming part of the API for this library. */
 enum {
 	CDB_OK_E             =   0, /* no error */
-	CDB_NOT_FOUND_E      =   0, /* key: not-found */
+	CDB_NOT_FOUND_E      =   0, /* key: not-found, same as CDB_OK_E. */
 	CDB_FOUND_E          =   1, /* key: found */
 	CDB_ERROR_E          =  -1, /* generic error */
 	CDB_ERROR_HASH_E     =  -2, /* unexpected hash value given bucket */
@@ -484,6 +484,9 @@ int cdb_open(cdb_t **cdb, const cdb_options_t *ops, const int create, const char
 		goto fail;
 	memset(c, 0, csz);
 	c->ops         = *ops;
+	/* TODO: This needs changing to main compatibility with <https://cdb.cr.yp.to/index.html>,
+	 * as there is a new "blessed" 64-bit version instead of ad-hoc 64-bit
+	 * versions. */
 	const cdb_hash_fn hash_fn = c->ops.size >= 64 ? cdb_hash64 : cdb_hash;
 	c->ops.size    = c->ops.size    ? c->ops.size / CHAR_BIT : (32ul / CHAR_BIT);
 	c->ops.hash    = c->ops.hash    ? c->ops.hash    : hash_fn;
