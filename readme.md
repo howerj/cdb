@@ -38,16 +38,18 @@ There are some example database available at
 <https://github.com/howerj/cdbdbs> that can be used in conjunction with this
 library or other CDB compatible tools for testing purposes.
 
-**This library can create 16, 32 and 64 bit versions of the CDB file format
-removing one of the major limitations of the 32-bit version.**
+**This library can create 16, 32 and 64 bit versions of the CDB file format**.
 
-**A new 64-bit version of CDB has been released, available at 
-<https://cdb.cr.yp.to/index.html>, this means some of the documentaiton here is 
-out of date, and the new format will need to be implemented and tested for capatibility 
-with this version.**
+Originally CDB was only available in 32-bit format with many others extending
+CDB into 64-bit versions which do not have the 4GiB limit on file size. A long
+time after the first release the author, D.J Bernstein, made a 64-bit version,
+available at <https://cdb.cr.yp.to/index.html>. This library is compatible
+with both the 32 and 64 bit version of the file format.
 
-**The 64-bit version of the database uses a different hash than djb2, this will
-be resolved with flags in future releases.**
+This implementation can also create 16-bit versions of the file format, which
+are much more limited than either with a maximum database size of 64KiB,
+suitable only for constrained and very limited systems.
+
 
 # OPTIONS
 

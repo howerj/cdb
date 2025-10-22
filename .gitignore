@@ -2,6 +2,9 @@
 *.a
 *.bin
 *.cdb
+*.cdb16
+*.cdb32
+*.cdb64
 *.db
 *.dll
 *.exe

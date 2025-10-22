@@ -33,6 +33,10 @@
 #define CDB_READ_BUFFER_LENGTH      (256ul)
 #endif
 
+#ifndef CDB_USE_SDBM64 /* Use SDBM hash for the 64-bit version of the library */
+#define CDB_USE_SDBM64 (0) 
+#endif
+
 #ifndef cdb_assert
 #define cdb_assert(X) (assert((X)))
 #endif
@@ -142,23 +146,18 @@ static inline uint32_t cdb_djb_hash(const uint8_t *s, const size_t length) {
 	return h;
 }
 
-static int cdb_memory_compare(const void *a, const void *b, size_t length) {
-	cdb_assert(a);
-	cdb_assert(b);
-	return memcmp(a, b, length);
-}
-
-typedef cdb_word_t (*cdb_hash_fn)(const uint8_t *s, const size_t length);
-
-cdb_word_t cdb_hash(const uint8_t *s, const size_t length) {
+static inline cdb_word_t cdb_djb64_hash(const uint8_t *s, const size_t length) {
 	cdb_assert(s);
-	return cdb_djb_hash(s, length);
+	uint64_t h = 5381ull;
+	for (size_t i = 0; i < length; i++)
+		h = ((h << 5ull) + h) ^ s[i]; /* (h * 33) xor c */
+	return h;
 }
 
 /* A 64-bit hash has to be used for the 64-bit database version otherwise if 
  * we used a 32-bit hash all of our keys and values would be
  * stored...suboptimally. */
-static cdb_word_t cdb_hash64(const uint8_t *s, const size_t length) {
+static inline cdb_word_t cdb_sdbm64_hash(const uint8_t *s, const size_t length) {
 	cdb_assert(s);
 	/* SDBM hash see: <http://www.cse.yorku.ca/~oz/hash.html>
 	and <https://www.partow.net/programming/hashfunctions> */
@@ -169,6 +168,19 @@ static cdb_word_t cdb_hash64(const uint8_t *s, const size_t length) {
 		hash = ch + (hash << 6) + (hash << 16) - hash;
 	}
 	return hash;
+}
+
+typedef cdb_word_t (*cdb_hash_fn)(const uint8_t *s, const size_t length);
+
+cdb_word_t cdb_hash(const uint8_t *s, const size_t length) {
+	cdb_assert(s);
+	return cdb_djb_hash(s, length);
+}
+
+static int cdb_memory_compare(const void *a, const void *b, size_t length) {
+	cdb_assert(a);
+	cdb_assert(b);
+	return memcmp(a, b, length);
 }
 
 static void cdb_preconditions(cdb_t *cdb) {
@@ -484,10 +496,8 @@ int cdb_open(cdb_t **cdb, const cdb_options_t *ops, const int create, const char
 		goto fail;
 	memset(c, 0, csz);
 	c->ops         = *ops;
-	/* TODO: This needs changing to main compatibility with <https://cdb.cr.yp.to/index.html>,
-	 * as there is a new "blessed" 64-bit version instead of ad-hoc 64-bit
-	 * versions. */
-	const cdb_hash_fn hash_fn = c->ops.size >= 64 ? cdb_hash64 : cdb_hash;
+	const cdb_hash_fn hash64_fn = CDB_USE_SDBM64 ? cdb_sdbm64_hash : cdb_djb64_hash;
+	const cdb_hash_fn hash_fn = c->ops.size >= 64 ? hash64_fn : cdb_hash;
 	c->ops.size    = c->ops.size    ? c->ops.size / CHAR_BIT : (32ul / CHAR_BIT);
 	c->ops.hash    = c->ops.hash    ? c->ops.hash    : hash_fn;
 	c->ops.compare = c->ops.compare ? c->ops.compare : cdb_memory_compare;
