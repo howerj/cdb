@@ -1,7 +1,7 @@
 # CDB makefile - default target should build everything
 #
 VERSION =0x090000ul
-CFLAGS  =-Wall -Wextra -fPIC -std=c99 -O3 -pedantic -fwrapv -Wmissing-prototypes -DCDB_VERSION="${VERSION}" ${DEFINES} ${EXTRA} 
+CFLAGS  =-Wall -Wextra -fPIC -std=c99 -O3 -pedantic -fwrapv -Wmissing-prototypes -fno-delete-null-pointer-checks -fno-strict-aliasing -fno-strict-overflow -DCDB_VERSION="${VERSION}" ${DEFINES} ${EXTRA}
 TARGET  =cdb
 AR      =ar
 ARFLAGS =rcs
@@ -64,5 +64,6 @@ dist: install
 
 clean: .git
 	git clean -dffx
+
 
 

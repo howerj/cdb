@@ -52,7 +52,7 @@ static void *cdb_open_cb(const char *name, int mode) {
 	if (!f)
 		return f;
 	const size_t length = 1024ul * 16ul;
-	file_t *fb = malloc(sizeof (*f) + length);
+	file_t *fb = malloc(sizeof (*fb) + length);
 	if (!fb) {
 		fclose(f);
 		return NULL;
