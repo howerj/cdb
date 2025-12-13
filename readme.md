@@ -1335,6 +1335,13 @@ These issues are minor, and have some drawbacks, they are also not sufficient
 to create a new format that is incompatible with all the tooling already out
 there.
 
+For more information about how to design a binary format see:
+
+* <https://stackoverflow.com/questions/323604>
+* <https://stackoverflow.com/questions/7629194>
+* <https://fadden.com/tech/file-formats.html>
+* <https://libpng.org/pub/png/spec/iso/index-object.html#5PNG-file-signature>
+
 # BUGS
 
 For any bugs, email the [author][]. It comes with a 'works on my machine
@@ -1534,3 +1541,4 @@ the [Unlicense][]. Do what thou wilt.
 [ftell]: https://cplusplus.com/reference/cstdio/ftell/
 [SOUNDEX]: https://en.wikipedia.org/wiki/Soundex
 [Bloom Filter]: https://en.wikipedia.org/wiki/Bloom_filter
+
