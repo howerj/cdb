@@ -9,7 +9,7 @@ extern "C" {
 #define CDB_PROJECT "Constant Database"
 #define CDB_AUTHOR  "Richard James Howe"
 #define CDB_EMAIL   "howe.r.j.89@gmail.com"
-#define CDB_LICENSE "The Unlicense"
+#define CDB_LICENSE "0BSD"
 #define CDB_REPO    "https://github.com/howerj/cdb"
 
 #include <stddef.h>

@@ -1,7 +1,7 @@
 /* Program: Constant Database Library
  * Author:  Richard James Howe
  * Email:   howe.r.j.89@gmail.com
- * License: Unlicense
+ * License: 0BSD
  * Repo:    <https://github.com/howerj/cdb>
  *
  * Consult the "readme.md" file for a detailed description

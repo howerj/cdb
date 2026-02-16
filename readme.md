@@ -19,7 +19,7 @@ cdb -H
 # DESCRIPTION
 
 	Author:     Richard James Howe
-	License:    Unlicense
+	License:    0BSD
 	Repository: <https://github.com/howerj/cdb>
 	Email:      howe.r.j.89@gmail.com
 
@@ -1502,7 +1502,7 @@ implementation. It only implements the original 32-bit version.
 # COPYRIGHT
 
 The libraries, documentation, and the test driver program are licensed under
-the [Unlicense][]. Do what thou wilt.
+the [0BSD][]. Do what thou wilt.
 
 [author]: howe.r.j.89@gmail.com
 [main.c]: main.c
@@ -1518,7 +1518,7 @@ the [Unlicense][]. Do what thou wilt.
 [djb2]: http://www.cse.yorku.ca/~oz/hash.html
 [ronn]: https://www.mankier.com/1/ronn
 [pandoc]: https://pandoc.org/
-[Unlicense]: https://en.wikipedia.org/wiki/Unlicense
+[0BSD]: https://en.wikipedia.org/wiki/BSD_licenses#0-clause_license_(%22BSD_Zero_Clause_License%22)
 [Make]: https://en.wikipedia.org/wiki/Make_(software)
 [sh]: https://en.wikipedia.org/wiki/Bourne_shell
 [git]: https://git-scm.com/
