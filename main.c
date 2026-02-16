@@ -487,8 +487,6 @@ static int generate(FILE *output, unsigned long records, unsigned long min, unsi
 		max = 1024;
 	if (min > max)
 		min = max;
-	if ((max + min) > max)
-		return -1;
 	for (uint64_t i = 0; i < records; i++) {
 		const unsigned long kl = (cdb_prng(s) % (max + min)) + min; /* adds bias but so what fight me */
 		const unsigned long vl = (cdb_prng(s) % (max + min)) + min;
@@ -597,7 +595,7 @@ int main(int argc, char **argv) {
 	cdb_options_t ops = cdb_host_options;
 
 	cdb_getopt_t opt = { .init = 0 };
-	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hHgvt:c:d:k:s:q:V:b:T:m:M:R:S:o:G:")) != -1; ) {
+	for (int ch = 0; (ch = cdb_getopt(&opt, argc, argv, "hHgvt:c:d:k:s:q:V:b:T:m:M:R:S:o:")) != -1; ) {
 		switch (ch) {
 		case 'h': return help(stdout, argv[0]), 0;
 		case 'H': return hasher(stdin, stdout);
