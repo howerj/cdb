@@ -8,6 +8,15 @@ FAIL=0;
 PERFORMANCE=${PERFORMANCE:-test.cdb};
 CDB=${CDB:-cdb};
 
+# This is very imprecise benchmark, it should only be used as
+# an indicator, nothing more. A better bench mark pulling in all
+# the different implementations of CDB would be useful.
+#
+# - `./cdb` is from <https://github.com/howerj/cdb> (this one)
+# - `cdb` is an installed package from Michael Tokarev 
+# <https://www.corpit.ru/mjt/tinycdb.html>.
+# - `cdbstats`/`cdbdump`/`cdbmake` is the original from DJB
+# from <https://cdb.cr.yp.to/>.
 performance () {
 	set -eux;
 	make test;

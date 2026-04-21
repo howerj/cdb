@@ -196,7 +196,7 @@ static int cdb_dump(cdb_t *cdb, const cdb_file_pos_t *key, const cdb_file_pos_t 
 	assert(value);
 	assert(param);
 	FILE *output = param;
-	char kstr[64+1], vstr[64+2]; /* NOT INITIALIZED */
+	char kstr[64+2], vstr[64+2]; /* NOT INITIALIZED */
 	kstr[0] = '+';
 	const unsigned kl = cdb_number_to_string(kstr + 1, key->length, 10) + 1;
 	vstr[0] = ',';
@@ -684,6 +684,6 @@ int main(int argc, char **argv) {
 		if (rename(tmp, file) < 0)
 			die("rename from '%s' to '%s' failed: %s", tmp, file, strerror(errno));
 	}
-	return r < 0 ? 1 : 0;
+	return r < 0 ? 1 : r; /* 2 might be returned for not found */
 }
 
